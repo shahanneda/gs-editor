@@ -2,8 +2,20 @@ const data = {};
 let gaussians;
 let depthIndex;
 
+instanceMode = false;
 onmessage = function (event) {
   // Init web worker event
+  // console.log(
+  //   "got msg",
+  //   event.data,
+  //   event.data.instanceMode,
+  //   event.data.instanceMode !== undefined
+  // );
+  if (event.data.instanceMode !== undefined) {
+    instanceMode = event.data.instanceMode;
+    console.log("GOT instance mode", instanceMode);
+  }
+
   if (event.data.gaussians) {
     gaussians = event.data.gaussians;
     gaussians.totalCount = gaussians.count;
@@ -15,6 +27,7 @@ onmessage = function (event) {
 
     data.positions = new Float32Array(gaussians.count * 3);
     data.opacities = new Float32Array(gaussians.count);
+    data.instances = new Float32Array(gaussians.count);
     data.cov3Da = new Float32Array(gaussians.count * 3);
     data.cov3Db = new Float32Array(gaussians.count * 3);
 
@@ -47,12 +60,29 @@ onmessage = function (event) {
     sortGaussiansByDepth(depthIndex, gaussians, viewMatrix, sortingAlgorithm);
 
     // Update arrays containing the data
+    // console.log("instances are", gaussians.instances);
+    // console.log("data instances are", data.instances);
+
     for (let j = 0; j < gaussians.count; j++) {
+      // for (let j = 0; j < 1000; j++) {
       const i = depthIndex[j];
 
-      data.colors[j * 3] = gaussians.colors[i * 3];
-      data.colors[j * 3 + 1] = gaussians.colors[i * 3 + 1];
-      data.colors[j * 3 + 2] = gaussians.colors[i * 3 + 2];
+      data.instances[j] = gaussians.instances[i];
+
+      if (instanceMode) {
+        // const instance = gaussians.instance[j]
+        // if (gaussians.instances[j] != 0) {
+        // console.log("found non zero instance", gaussians.instances[j]);
+        // }
+        // console.log(data.instances);
+        data.colors[j * 3] = 0;
+        data.colors[j * 3 + 1] = data.instances[j];
+        data.colors[j * 3 + 2] = data.instances[j];
+      } else {
+        data.colors[j * 3] = gaussians.colors[i * 3];
+        data.colors[j * 3 + 1] = gaussians.colors[i * 3 + 1];
+        data.colors[j * 3 + 2] = gaussians.colors[i * 3 + 2];
+      }
 
       data.positions[j * 3] = gaussians.positions[i * 3];
       data.positions[j * 3 + 1] = gaussians.positions[i * 3 + 1];

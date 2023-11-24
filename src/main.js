@@ -46,6 +46,7 @@ const settings = {
   moveDirection: "UP",
   editColor: { r: 1, g: 1, b: 1 },
   pointCloudMode: false,
+  instanceMode: false,
   uploadFile: () => document.querySelector("#input").click(),
 
   // Camera calibration
@@ -223,6 +224,22 @@ function getGuassiansWithinDistance(pos, threshold) {
   return hits;
 }
 
+function getGaussiansSameInstance(id, threshold) {
+  const instance = globalData.gaussians.instances.slice(id, id + 1);
+
+  const hits = [];
+  for (let i = 0; i < gaussianCount; i++) {
+    const gInstance = globalData.gaussians.instances.slice(i, i + 1);
+    const dist = (instance - gInstance) ** 2;
+    if (dist < threshold) {
+      hits.push({
+        id: i,
+      });
+    }
+  }
+  return hits;
+}
+
 // function vec3_array_mean(){
 
 // }
@@ -309,7 +326,8 @@ function moveUp(x, y) {
 
 function removeOpacity(x, y) {
   const hit = cam.raycast(x, y);
-  const hits = getGuassiansWithinDistance(hit.pos, settings.selectionSize);
+  // const hits = getGuassiansWithinDistance(hit.pos, settings.selectionSize);
+  const hits = getGaussiansSameInstance(hit.id, 0.1);
   console.log("hits", hits);
   hits.forEach((hit) => {
     const i = hit.id;
@@ -344,9 +362,10 @@ async function loadScene({ scene, file }) {
   if (scene != null) {
     scene = scene.split("(")[0].trim();
 
-    const url = isLocalHost
-      ? defaultCameraParameters[scene].localUrl
-      : defaultCameraParameters[scene].url;
+    // const url = isLocalHost
+    //   ? defaultCameraParameters[scene].localUrl
+    //   : defaultCameraParameters[scene].url;
+    const url = `http://127.0.0.1:5501/data/couch_id06.sply`;
     // const url = `http://127.0.0.1:5500/data/Shahan_02_id02-30000.cply`;
     // const url = `http://127.0.0.1:5500/data/room.ply`;
     // const url = `https://huggingface.co/kishimisu/3d-gaussian-splatting-webgl/resolve/main/${scene}.ply`;
@@ -377,7 +396,8 @@ async function loadScene({ scene, file }) {
 
   // Load and pre-process gaussian data from .ply file
   const data = await loadPly(content.buffer);
-  console.log(gaussianCount);
+  // console.log("instance is", data.instances);
+  // console.log(gaussianCount);
   data.cov3Da = new Float32Array(gaussianCount * 3);
   data.cov3Db = new Float32Array(gaussianCount * 3);
 

@@ -44,6 +44,15 @@ function initGUI() {
     });
 
   gui.add(settings, "editingMode", EDITING_MODES).name("Editing(ALT + CLICK)");
+  gui
+    .add(settings, "instanceMode")
+    .name("Instance mode")
+    .onChange((value) => {
+      console.log("sending message", value);
+      worker.postMessage({
+        instanceMode: value,
+      });
+    });
   // gui.add(settings, "Hello");
 
   gui.add(settings, "selectionSize", 0.01, 5, 0.01).name("Selection Size");
