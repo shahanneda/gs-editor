@@ -298,7 +298,8 @@ function interactiveColor(x, y) {
 function moveUp(x, y) {
   // console.log("moving up!");
   const hit = cam.raycast(x, y);
-  const hits = getGuassiansWithinDistance(hit.pos, settings.selectionSize);
+  // const hits = getGuassiansWithinDistance(hit.pos, settings.selectionSize);
+  const hits = getGaussiansSameInstance(hit.id, 0.1);
   // const hits = getGuassiansSameColor(hit.pos, hit.id, 1, 0.1);
   // console.log("hits", hits);
   hits.forEach((hit) => {
@@ -365,7 +366,7 @@ async function loadScene({ scene, file }) {
     // const url = isLocalHost
     //   ? defaultCameraParameters[scene].localUrl
     //   : defaultCameraParameters[scene].url;
-    const url = `http://127.0.0.1:5501/data/couch_id06.sply`;
+    const url = `http://127.0.0.1:5501/data/couch_id22.sply`;
     // const url = `http://127.0.0.1:5500/data/Shahan_02_id02-30000.cply`;
     // const url = `http://127.0.0.1:5500/data/room.ply`;
     // const url = `https://huggingface.co/kishimisu/3d-gaussian-splatting-webgl/resolve/main/${scene}.ply`;

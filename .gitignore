@@ -3,3 +3,5 @@
 *.cply
 *.ply
 node_modules/**
+*.sply
+data/**

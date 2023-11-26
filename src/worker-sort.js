@@ -2,7 +2,8 @@ const data = {};
 let gaussians;
 let depthIndex;
 
-instanceMode = false;
+instanceMode = true;
+let instanceToColor = new Map();
 onmessage = function (event) {
   // Init web worker event
   // console.log(
@@ -70,14 +71,47 @@ onmessage = function (event) {
       data.instances[j] = gaussians.instances[i];
 
       if (instanceMode) {
+        // console.log(data.instances);
         // const instance = gaussians.instance[j]
         // if (gaussians.instances[j] != 0) {
-        // console.log("found non zero instance", gaussians.instances[j]);
+        //   console.log("found non zero instance", gaussians.instances[j]);
         // }
         // console.log(data.instances);
-        data.colors[j * 3] = 0;
-        data.colors[j * 3 + 1] = data.instances[j];
-        data.colors[j * 3 + 2] = data.instances[j];
+        let color = [];
+        const instance = data.instances[j];
+        if (instanceToColor.has(instance)) {
+          color = instanceToColor.get(instance);
+          // console.log("existing color");
+        } else {
+          // console.log("did not find color");
+          color = [Math.random(), Math.random(), Math.random()];
+          instanceToColor.set(instance, color);
+        }
+
+        data.colors[j * 3] = color[0];
+        data.colors[j * 3 + 1] = color[1];
+        data.colors[j * 3 + 2] = color[2];
+        // if (data.instances[j] == 0) {
+        //   data.colors[j * 3] = 0;
+        //   data.colors[j * 3 + 1] = 0;
+        //   data.colors[j * 3 + 2] = 0;
+        // } else if (data.instances[j] == 1) {
+        //   data.colors[j * 3] = 1;
+        //   data.colors[j * 3 + 1] = 0;
+        //   data.colors[j * 3 + 2] = 0;
+        // } else if (data.instances[j] == 2) {
+        //   data.colors[j * 3] = 0;
+        //   data.colors[j * 3 + 1] = 1;
+        //   data.colors[j * 3 + 2] = 0;
+        // } else if (data.instances[j] == 3) {
+        //   data.colors[j * 3] = 0;
+        //   data.colors[j * 3 + 1] = 0;
+        //   data.colors[j * 3 + 2] = 1;
+        // } else {
+        //   data.colors[j * 3] = 0;
+        //   data.colors[j * 3 + 1] = 1;
+        //   data.colors[j * 3 + 2] = 1;
+        // }
       } else {
         data.colors[j * 3] = gaussians.colors[i * 3];
         data.colors[j * 3 + 1] = gaussians.colors[i * 3 + 1];
