@@ -357,7 +357,7 @@ function moveSelectedGuassiansToPlace() {
   worker.postMessage(globalData);
   cam.updateWorker();
 }
-setInterval(moveSelectedGuassiansToPlace, 1000);
+setInterval(moveSelectedGuassiansToPlace, 100);
 
 function moveUp(x, y) {
   // console.log("moving up!");
