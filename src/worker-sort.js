@@ -2,7 +2,7 @@ const data = {};
 let gaussians;
 let depthIndex;
 
-instanceMode = true;
+instanceMode = false;
 let instanceToColor = new Map();
 onmessage = function (event) {
   // Init web worker event
@@ -15,6 +15,38 @@ onmessage = function (event) {
   if (event.data.instanceMode !== undefined) {
     instanceMode = event.data.instanceMode;
     console.log("GOT instance mode", instanceMode);
+  }
+
+  console.log("got worker event", event.data);
+  if (
+    event.data.gaussians &&
+    event.data.gaussians.selectedGaussians !== undefined &&
+    event.data.gaussians.selectedGaussians.length != 0
+  ) {
+    console.log("convering ", event.data.gaussians.selectedGaussians);
+    selectedInSortedCoordiantes = event.data.gaussians.selectedGaussians;
+
+    gaussians.selectedGaussians = [];
+    inverseDepthIndex = new Uint32Array(gaussians.count);
+    for (let j = 0; j < gaussians.count; j++) {
+      const i = depthIndex[j];
+      inverseDepthIndex[i] = j;
+    }
+
+    gaussians.selectedGaussians = [];
+    for (let i = 0; i < selectedInSortedCoordiantes.length; i++) {
+      const oldCord = selectedInSortedCoordiantes[i];
+      // console.log("adding old cord");
+      gaussians.selectedGaussians.push(inverseDepthIndex[oldCord]);
+      // gaussians.selectedGaussians.push(oldCord);
+    }
+
+    // gaussians.selectedGaussians = event.data.selectedGaussians;
+
+    console.log(
+      "got selected in worker from user after conversion",
+      gaussians.selectedGaussians
+    );
   }
 
   if (event.data.gaussians) {
@@ -33,7 +65,7 @@ onmessage = function (event) {
     data.cov3Db = new Float32Array(gaussians.count * 3);
 
     data.colors = new Float32Array(gaussians.count * 3);
-
+    data.selectedGaussians = [];
     // console.log("3ds are", gaussians);
     // gaussians.cov3Da = new Float32Array(gaussians.count * 3);
     // gaussians.cov3Db = new Float32Array(gaussians.count * 3);
@@ -132,6 +164,8 @@ onmessage = function (event) {
       data.cov3Db[j * 3 + 1] = gaussians.cov3Db[i * 3 + 1];
       data.cov3Db[j * 3 + 2] = gaussians.cov3Db[i * 3 + 2];
 
+      // data.selectedGaussians[j] = gaussians.
+
       // Split the covariance matrix into two vec3
       // so they can be used as vertex shader attributes
       // data.cov3Da[j * 3] = gaussians.cov3Ds[i * 6];
@@ -141,6 +175,35 @@ onmessage = function (event) {
       // data.cov3Db[j * 3] = gaussians.cov3Ds[i * 6 + 3];
       // data.cov3Db[j * 3 + 1] = gaussians.cov3Ds[i * 6 + 4];
       // data.cov3Db[j * 3 + 2] = gaussians.cov3Ds[i * 6 + 5];
+    }
+
+    data.selectedGaussians = [];
+    console.log("in worker selected are", gaussians.selectedGaussians);
+
+    // gaussians.selectedGaussians = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    // for (let k = 0; k < 1000; k++) {
+    //   gaussians.selectedGaussians.push(k);
+    // }
+
+    inverseDepthIndex = new Uint32Array(gaussians.count);
+    for (let j = 0; j < gaussians.count; j++) {
+      const i = depthIndex[j];
+      inverseDepthIndex[i] = j;
+    }
+
+    for (
+      let selectedI = 0;
+      selectedI < gaussians.selectedGaussians.length;
+      selectedI++
+    ) {
+      const originalSelectedIndex = gaussians.selectedGaussians[selectedI];
+      const j = inverseDepthIndex[originalSelectedIndex];
+
+      data.colors[j * 3] = 0;
+      data.colors[j * 3 + 1] = 0;
+      data.colors[j * 3 + 2] = 1;
+
+      // data.selectedGaussians.push(j);
     }
 
     const sortTime = `${((performance.now() - start) / 1000).toFixed(3)}s`;

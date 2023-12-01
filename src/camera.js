@@ -41,6 +41,7 @@ class Camera {
       KeyS: false,
       KeyA: false,
       KeyD: false,
+      KeyC: false,
       ShiftLeft: false,
       Space: false,
     };
@@ -237,6 +238,16 @@ class Camera {
     return front;
   }
 
+  // getPos(radius = this.radius) {
+  //   const pos = [
+  //     radius * Math.sin(this.phi) * Math.cos(this.theta),
+  //     radius * Math.cos(this.phi),
+  //     radius * Math.sin(this.phi) * Math.sin(this.theta),
+  //   ];
+
+  //   return vec3.transformMat3(pos, pos, this.sceneRotationMatrix);
+  // }
+
   update() {
     // Update current position
     vec3.add(
@@ -293,6 +304,32 @@ class Camera {
         sortingAlgorithm: settings.sortingAlgorithm,
       });
     }
+
+    // console.log("target is", this.target);
+    // console.log(this.getPosInFrontOfCamera());
+  }
+
+  getPosInFrontOfCamera() {
+    // const Px = (x / window.innerWidth) * 2 - 1;
+    // const Py = -((y / window.innerHeight) * 2 - 1);
+    const Px = 0.5 * 2 - 1;
+    const Py = -(0.5 * 2 - 1);
+
+    const cameraToWorld = mat4.invert(mat4.create(), this.vpm);
+    const rayOriginWorld = vec3.transformMat4(
+      vec3.create(),
+      this.pos,
+      cameraToWorld
+    );
+    const rayPWorld = vec3.transformMat4(
+      vec3.create(),
+      [Px, Py, 1],
+      cameraToWorld
+    );
+    const rd = vec3.subtract(vec3.create(), rayPWorld, rayOriginWorld);
+    vec3.normalize(rd, rd);
+
+    return rayOriginWorld + 2 * rd;
   }
 
   raycast_gs(x, y) {

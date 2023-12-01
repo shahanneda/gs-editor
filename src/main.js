@@ -154,6 +154,7 @@ async function main() {
         count: gaussianCount,
       },
     };
+    console.log("got this data from worker", data);
 
     if (
       getComputedStyle(document.querySelector("#loading-container")).opacity !=
@@ -176,6 +177,7 @@ async function main() {
     colorData = data.colors;
     positionData = data.positions;
     opacityData = data.opacities;
+    // selectedGaussians = data.selectedGaussians;
 
     settings.sortTime = sortTime;
 
@@ -194,6 +196,23 @@ async function main() {
 }
 
 function handleInteractive(e) {
+  if (cam.keyStates.KeyC) {
+    const hit = cam.raycast(e.clientX, e.clientY);
+    const hits = getGaussiansSameInstance(hit.id, 0.1);
+    globalData.gaussians.selectedGaussians = [];
+
+    hits.forEach((hit) => {
+      const i = hit.id;
+      globalData.gaussians.selectedGaussians.push(i);
+    });
+
+    console.log(
+      "now global data selected is: ",
+      globalData.gaussians.selectedGaussians
+    );
+    worker.postMessage(globalData);
+  }
+
   if (e.altKey && e.ctrlKey) {
     moveUp(e.clientX, e.clientY);
   } else if (e.ctrlKey) {
@@ -295,6 +314,36 @@ function interactiveColor(x, y) {
   // updateBuffer(buffers.opacity, data.opacities);
 }
 
+function moveSelectedGuassiansToPlace() {
+  if (
+    globalData.gaussians.selectedGaussians == null ||
+    globalData.gaussians.selectedGaussians == []
+  ) {
+    // console.log("Leaving ");
+    return;
+  }
+
+  // console.log("Moving guassisns", globalData.selectedGaussians.length);
+  const camPos = cam.getPosInFrontOfCamera();
+
+  globalData.gaussians.selectedGaussians.forEach((i) => {
+    // globalData.gaussians.positions[i * 3 + 0] = camPos[0];
+    // globalData.gaussians.positions[i * 3 + 1] = camPos[1];
+    // globalData.gaussians.positions[i * 3 + 2] = camPos[2];
+
+    globalData.gaussians.colors[3 * i] = 1;
+    globalData.gaussians.colors[3 * i + 1] = 0;
+    globalData.gaussians.colors[3 * i + 2] = 0;
+  });
+
+  updateBuffer(positionBuffer, globalData.gaussians.positions);
+  // requestRender();
+  // cam.needsWorkerUpdate = true;
+  // worker.postMessage(globalData);
+  // cam.updateWorker();
+}
+setInterval(moveSelectedGuassiansToPlace, 100);
+
 function moveUp(x, y) {
   // console.log("moving up!");
   const hit = cam.raycast(x, y);
@@ -366,7 +415,8 @@ async function loadScene({ scene, file }) {
     // const url = isLocalHost
     //   ? defaultCameraParameters[scene].localUrl
     //   : defaultCameraParameters[scene].url;
-    const url = `http://127.0.0.1:5501/data/couch_id22.sply`;
+    const url = `http://127.0.0.1:5501/data/couch_id25-30000.sply`;
+    // const url = `http://127.0.0.1:5501/data/replica_id02-2400.sply`;
     // const url = `http://127.0.0.1:5500/data/Shahan_02_id02-30000.cply`;
     // const url = `http://127.0.0.1:5500/data/room.ply`;
     // const url = `https://huggingface.co/kishimisu/3d-gaussian-splatting-webgl/resolve/main/${scene}.ply`;
@@ -436,6 +486,7 @@ async function loadScene({ scene, file }) {
   worker.postMessage({
     gaussians: {
       ...data,
+      selectedGaussians: [],
       count: gaussianCount,
     },
   });
