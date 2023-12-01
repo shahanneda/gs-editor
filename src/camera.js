@@ -328,8 +328,9 @@ class Camera {
     );
     const rd = vec3.subtract(vec3.create(), rayPWorld, rayOriginWorld);
     vec3.normalize(rd, rd);
+    // console.log("direction is", rd);
 
-    return rayOriginWorld + 2 * rd;
+    return this.pos;
   }
 
   raycast_gs(x, y) {

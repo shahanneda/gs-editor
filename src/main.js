@@ -19,6 +19,8 @@ let colorBuffer,
   positionData,
   opacityData,
   colorData;
+
+let lastMovedPos = undefined;
 globalData = undefined;
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -154,7 +156,7 @@ async function main() {
         count: gaussianCount,
       },
     };
-    console.log("got this data from worker", data);
+    // console.log("got this data from worker", data)
 
     if (
       getComputedStyle(document.querySelector("#loading-container")).opacity !=
@@ -198,6 +200,8 @@ async function main() {
 function handleInteractive(e) {
   if (cam.keyStates.KeyC) {
     const hit = cam.raycast(e.clientX, e.clientY);
+    lastMovedPos = hit.pos;
+
     const hits = getGaussiansSameInstance(hit.id, 0.1);
     globalData.gaussians.selectedGaussians = [];
 
@@ -205,6 +209,8 @@ function handleInteractive(e) {
       const i = hit.id;
       globalData.gaussians.selectedGaussians.push(i);
     });
+
+    // lastMovedPos =
 
     console.log(
       "now global data selected is: ",
@@ -325,24 +331,33 @@ function moveSelectedGuassiansToPlace() {
 
   // console.log("Moving guassisns", globalData.selectedGaussians.length);
   const camPos = cam.getPosInFrontOfCamera();
+  // const camPos = cam.pos;
+  // console.log(lastMovedPos, camPos);
+  // diff = lastMovedPos - camPos
+  // lastMovedPos
+
+  const diff = vec3.sub(vec3.create(), lastMovedPos, camPos);
+  console.log("diff is", diff);
+  vec3.copy(lastMovedPos, camPos);
+  // lastMovedPos = vec;
 
   globalData.gaussians.selectedGaussians.forEach((i) => {
-    // globalData.gaussians.positions[i * 3 + 0] = camPos[0];
-    // globalData.gaussians.positions[i * 3 + 1] = camPos[1];
-    // globalData.gaussians.positions[i * 3 + 2] = camPos[2];
+    globalData.gaussians.positions[i * 3 + 0] -= diff[0];
+    globalData.gaussians.positions[i * 3 + 1] -= diff[1];
+    globalData.gaussians.positions[i * 3 + 2] -= diff[2];
 
-    globalData.gaussians.colors[3 * i] = 1;
-    globalData.gaussians.colors[3 * i + 1] = 0;
-    globalData.gaussians.colors[3 * i + 2] = 0;
+    // globalData.gaussians.colors[3 * i] = 1;
+    // globalData.gaussians.colors[3 * i + 1] = 0;
+    // globalData.gaussians.colors[3 * i + 2] = 0;
   });
 
   updateBuffer(positionBuffer, globalData.gaussians.positions);
-  // requestRender();
-  // cam.needsWorkerUpdate = true;
-  // worker.postMessage(globalData);
-  // cam.updateWorker();
+  requestRender();
+  cam.needsWorkerUpdate = true;
+  worker.postMessage(globalData);
+  cam.updateWorker();
 }
-setInterval(moveSelectedGuassiansToPlace, 100);
+setInterval(moveSelectedGuassiansToPlace, 1000);
 
 function moveUp(x, y) {
   // console.log("moving up!");

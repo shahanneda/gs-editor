@@ -14,16 +14,16 @@ onmessage = function (event) {
   // );
   if (event.data.instanceMode !== undefined) {
     instanceMode = event.data.instanceMode;
-    console.log("GOT instance mode", instanceMode);
+    // console.log("GOT instance mode", instanceMode);
   }
 
-  console.log("got worker event", event.data);
+  // console.log("got worker event", event.data);
   if (
     event.data.gaussians &&
     event.data.gaussians.selectedGaussians !== undefined &&
     event.data.gaussians.selectedGaussians.length != 0
   ) {
-    console.log("convering ", event.data.gaussians.selectedGaussians);
+    // console.log("convering ", event.data.gaussians.selectedGaussians);
     selectedInSortedCoordiantes = event.data.gaussians.selectedGaussians;
 
     gaussians.selectedGaussians = [];
@@ -43,10 +43,10 @@ onmessage = function (event) {
 
     // gaussians.selectedGaussians = event.data.selectedGaussians;
 
-    console.log(
-      "got selected in worker from user after conversion",
-      gaussians.selectedGaussians
-    );
+    // console.log(
+    //   "got selected in worker from user after conversion",
+    //   gaussians.selectedGaussians
+    // );
   }
 
   if (event.data.gaussians) {
@@ -178,7 +178,7 @@ onmessage = function (event) {
     }
 
     data.selectedGaussians = [];
-    console.log("in worker selected are", gaussians.selectedGaussians);
+    // console.log("in worker selected are", gaussians.selectedGaussians);
 
     // gaussians.selectedGaussians = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     // for (let k = 0; k < 1000; k++) {
@@ -199,11 +199,11 @@ onmessage = function (event) {
       const originalSelectedIndex = gaussians.selectedGaussians[selectedI];
       const j = inverseDepthIndex[originalSelectedIndex];
 
-      data.colors[j * 3] = 0;
-      data.colors[j * 3 + 1] = 0;
-      data.colors[j * 3 + 2] = 1;
+      // data.colors[j * 3] = 0;
+      // data.colors[j * 3 + 1] = 0;
+      // data.colors[j * 3 + 2] = 1;
 
-      // data.selectedGaussians.push(j);
+      data.selectedGaussians.push(j);
     }
 
     const sortTime = `${((performance.now() - start) / 1000).toFixed(3)}s`;
