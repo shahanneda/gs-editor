@@ -129,6 +129,10 @@ class Camera {
         MOVING_DOWN = !MOVING_DOWN;
       }
 
+      if (e.code == "Escape") {
+        resetSelections();
+      }
+
       if (
         !this.freeFly ||
         this.disableMovement ||

@@ -197,7 +197,17 @@ async function main() {
   await loadScene({ scene: settings.scene });
 }
 
+function resetSelections() {
+  console.log("reseting seelctions");
+  globalData.gaussians.selectedGaussians = [];
+  worker.postMessage(globalData);
+}
+
 function handleInteractive(e) {
+  if (cam.keyStates.KeyEscape) {
+    console.log("got espac");
+  }
+
   if (cam.keyStates.KeyC) {
     const hit = cam.raycast(e.clientX, e.clientY);
     lastMovedPos = hit.pos;
@@ -331,13 +341,15 @@ function moveSelectedGuassiansToPlace() {
 
   // console.log("Moving guassisns", globalData.selectedGaussians.length);
   const camPos = cam.getPosInFrontOfCamera();
+  // gizmoRenderer.planeVertices = camPos;
+  // settings.showGizmo = true;
   // const camPos = cam.pos;
   // console.log(lastMovedPos, camPos);
   // diff = lastMovedPos - camPos
   // lastMovedPos
 
   const diff = vec3.sub(vec3.create(), lastMovedPos, camPos);
-  console.log("diff is", diff);
+  // console.log("diff is", diff);
   vec3.copy(lastMovedPos, camPos);
   // lastMovedPos = vec;
 
@@ -357,7 +369,7 @@ function moveSelectedGuassiansToPlace() {
   worker.postMessage(globalData);
   cam.updateWorker();
 }
-setInterval(moveSelectedGuassiansToPlace, 100);
+setInterval(moveSelectedGuassiansToPlace, 250);
 
 function moveUp(x, y) {
   // console.log("moving up!");
@@ -431,7 +443,7 @@ async function loadScene({ scene, file }) {
     //   ? defaultCameraParameters[scene].localUrl
     //   : defaultCameraParameters[scene].url;
     const url = `http://127.0.0.1:5501/data/couch_id25-30000.sply`;
-    // const url = `http://127.0.0.1:5501/data/replica_id02-2400.sply`;
+    // const url = `http://127.0.0.1:5501/data/replica_id05-2400.sply`;
     // const url = `http://127.0.0.1:5500/data/Shahan_02_id02-30000.cply`;
     // const url = `http://127.0.0.1:5500/data/room.ply`;
     // const url = `https://huggingface.co/kishimisu/3d-gaussian-splatting-webgl/resolve/main/${scene}.ply`;
