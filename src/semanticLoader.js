@@ -25,6 +25,7 @@ async function loadPly(content) {
   const scales = [];
   const harmonics = [];
   const colors = [];
+  const originalColors = [];
   const cov3Ds = [];
 
   // Scene bouding box
@@ -110,6 +111,7 @@ async function loadPly(content) {
       0.5 + SH_C0 * harmonic[2],
     ];
     colors.push(...color);
+    originalColors.push(...color);
     // harmonics.push(...harmonic)
 
     // (Webgl-specific) Pre-compute the 3D covariance matrix from
@@ -136,7 +138,7 @@ async function loadPly(content) {
     ).toFixed(3)}s`
   );
 
-  return { positions, opacities, colors, cov3Ds, instances };
+  return { positions, opacities, colors, cov3Ds, instances, originalColors };
 }
 
 // Converts scale and rotation properties of each

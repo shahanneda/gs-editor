@@ -65,6 +65,7 @@ onmessage = function (event) {
     data.cov3Db = new Float32Array(gaussians.count * 3);
 
     data.colors = new Float32Array(gaussians.count * 3);
+    data.originalColors = new Float32Array(gaussians.count * 3);
     data.selectedGaussians = [];
     // console.log("3ds are", gaussians);
     // gaussians.cov3Da = new Float32Array(gaussians.count * 3);
@@ -96,11 +97,22 @@ onmessage = function (event) {
     // console.log("instances are", gaussians.instances);
     // console.log("data instances are", data.instances);
 
+
+    // console.log(data)
+    // console.log("instance mode is: ", instanceMode);
+    // con
+
+    if (!instanceMode) {
+      gaussians.colors = gaussians.originalColors;
+    }
+
     for (let j = 0; j < gaussians.count; j++) {
       // for (let j = 0; j < 1000; j++) {
       const i = depthIndex[j];
 
       data.instances[j] = gaussians.instances[i];
+
+
 
       if (instanceMode) {
         // console.log(data.instances);
@@ -123,32 +135,19 @@ onmessage = function (event) {
         data.colors[j * 3] = color[0];
         data.colors[j * 3 + 1] = color[1];
         data.colors[j * 3 + 2] = color[2];
-        // if (data.instances[j] == 0) {
-        //   data.colors[j * 3] = 0;
-        //   data.colors[j * 3 + 1] = 0;
-        //   data.colors[j * 3 + 2] = 0;
-        // } else if (data.instances[j] == 1) {
-        //   data.colors[j * 3] = 1;
-        //   data.colors[j * 3 + 1] = 0;
-        //   data.colors[j * 3 + 2] = 0;
-        // } else if (data.instances[j] == 2) {
-        //   data.colors[j * 3] = 0;
-        //   data.colors[j * 3 + 1] = 1;
-        //   data.colors[j * 3 + 2] = 0;
-        // } else if (data.instances[j] == 3) {
-        //   data.colors[j * 3] = 0;
-        //   data.colors[j * 3 + 1] = 0;
-        //   data.colors[j * 3 + 2] = 1;
-        // } else {
-        //   data.colors[j * 3] = 0;
-        //   data.colors[j * 3 + 1] = 1;
-        //   data.colors[j * 3 + 2] = 1;
-        // }
       } else {
         data.colors[j * 3] = gaussians.colors[i * 3];
         data.colors[j * 3 + 1] = gaussians.colors[i * 3 + 1];
         data.colors[j * 3 + 2] = gaussians.colors[i * 3 + 2];
       }
+        data.originalColors[j * 3] = gaussians.originalColors[i * 3];
+        data.originalColors[j * 3 + 1] = gaussians.originalColors[i * 3 + 1];
+        data.originalColors[j * 3 + 2] = gaussians.originalColors[i * 3 + 2];
+
+      // data.originalColors[j * 3] = gaussians.originalColors[i * 3];
+      // data.originalColors[j * 3 + 1] = gaussians.originalColors[i * 3 + 1];
+      // data.originalColors[j * 3 + 2] = gaussians.originalColors[i * 3 + 2];
+
 
       data.positions[j * 3] = gaussians.positions[i * 3];
       data.positions[j * 3 + 1] = gaussians.positions[i * 3 + 1];
@@ -211,6 +210,13 @@ onmessage = function (event) {
     // `[Worker] Sorted ${gaussians.count} gaussians in ${sortTime}. Algorithm: ${sortingAlgorithm}`
     // );
     //     );
+    // When sending data back don't send it with instances instance colors
+
+    // if (!instanceMode){
+    //   data.colors = originalColors;
+    // }
+
+    // console.log(data)
     postMessage({
       data,
       sortTime,

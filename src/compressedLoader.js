@@ -16,7 +16,9 @@ async function loadPly(content) {
   const scales = [];
   const harmonics = [];
   const colors = [];
+  const originalColors = [];
   const cov3Ds = [];
+  const instances = [];
 
   // Scene bouding box
   sceneMin = new Array(3).fill(Infinity);
@@ -24,24 +26,29 @@ async function loadPly(content) {
 
   // console.log(gaussianCount);
   for (let i = 0; i < gaussianCount; i++) {
-    shift = 13 * i + 1;
+    shift = 14 * i + 1;
     const opacity = data[shift];
     const color = data.slice(shift + 1, shift + 4);
     const cov3d = data.slice(shift + 4, shift + 10);
     const position = data.slice(shift + 10, shift + 13);
+    const instance = data.slice(shift + 13, shift + 14);
+    // console.log(data.slice(0, 100))
 
     opacities.push(opacity);
     colors.push(...color);
+    originalColors.push(...color);
     cov3Ds.push(...cov3d);
     positions.push(...position);
+    instances.push(instance);
   }
   // console.log("opacitiy", opacities[1]);
   // console.log("color", colors.slice(3, 6));
   // console.log("cov3d", cov3Ds.slice(6, 12));
   // console.log("position", positions.slice(3, 6));
+  // console.log(instances)
   // console.log(opacities);
 
-  return { positions, opacities, colors, cov3Ds };
+  return { positions, opacities, colors, cov3Ds, instances, originalColors };
 }
 
 // Converts scale and rotation properties of each

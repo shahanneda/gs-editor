@@ -198,8 +198,8 @@ async function main() {
 }
 
 function resetSelections() {
-  console.log("reseting seelctions");
-  globalData.gaussians.selectedGaussians = [];
+  // console.log("reseting seelctions");
+  globalData.gaussians.selectedGaussians = null;
   worker.postMessage(globalData);
 }
 
@@ -209,6 +209,7 @@ function handleInteractive(e) {
   }
 
   if (cam.keyStates.KeyC) {
+    console.log("got key C!")
     const hit = cam.raycast(e.clientX, e.clientY);
     lastMovedPos = hit.pos;
 
@@ -227,6 +228,7 @@ function handleInteractive(e) {
       globalData.gaussians.selectedGaussians
     );
     worker.postMessage(globalData);
+    // cam.keyStates.KeyC = false;
   }
 
   if (e.altKey && e.ctrlKey) {
@@ -319,6 +321,9 @@ function interactiveColor(x, y) {
     globalData.gaussians.colors[3 * i] = settings.editColor.r;
     globalData.gaussians.colors[3 * i + 1] = settings.editColor.g;
     globalData.gaussians.colors[3 * i + 2] = settings.editColor.b;
+    globalData.gaussians.originalColors[3 * i] = settings.editColor.r;
+    globalData.gaussians.originalColors[3 * i + 1] = settings.editColor.g;
+    globalData.gaussians.originalColors[3 * i + 2] = settings.editColor.b;
   });
 
   updateBuffer(colorBuffer, globalData.gaussians.colors);
@@ -332,10 +337,11 @@ function interactiveColor(x, y) {
 
 function moveSelectedGuassiansToPlace() {
   if (
-    globalData.gaussians.selectedGaussians == null ||
-    globalData.gaussians.selectedGaussians == []
+    globalData.gaussians.selectedGaussians === null ||
+    !globalData.gaussians.selectedGaussians ||
+    globalData.gaussians.selectedGaussians === undefined
   ) {
-    // console.log("Leaving ");
+    console.log("Leaving " );
     return;
   }
 
@@ -347,6 +353,10 @@ function moveSelectedGuassiansToPlace() {
   // console.log(lastMovedPos, camPos);
   // diff = lastMovedPos - camPos
   // lastMovedPos
+
+  if(! lastMovedPos){
+    return;
+  }
 
   const diff = vec3.sub(vec3.create(), lastMovedPos, camPos);
   // console.log("diff is", diff);
@@ -442,7 +452,9 @@ async function loadScene({ scene, file }) {
     // const url = isLocalHost
     //   ? defaultCameraParameters[scene].localUrl
     //   : defaultCameraParameters[scene].url;
-    const url = `http://127.0.0.1:5501/data/couch_id25-30000.sply`;
+    const url = `http://127.0.0.1:5501/data/couch_id26-30000.csply`;
+    // const url = `http://127.0.0.1:5501/data/couch_id25-30000.sply`;
+    // const url = `http://127.0.0.1:5501/data/couch_id26-30000.sply`;
     // const url = `http://127.0.0.1:5501/data/replica_id05-2400.sply`;
     // const url = `http://127.0.0.1:5500/data/Shahan_02_id02-30000.cply`;
     // const url = `http://127.0.0.1:5500/data/room.ply`;
@@ -499,7 +511,7 @@ async function loadScene({ scene, file }) {
     }
   }
 
-  // console.log("at load time data is", data);
+  console.log("at load time data is", data);
   globalData = {
     gaussians: {
       ...data,

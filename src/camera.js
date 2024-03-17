@@ -133,6 +133,11 @@ class Camera {
         resetSelections();
       }
 
+      if(e.code == "KeyC") {
+        this.keyStates[e.code] = false;
+      }
+
+      this.keyStates[e.code] = true;
       if (
         !this.freeFly ||
         this.disableMovement ||

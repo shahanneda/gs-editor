@@ -73,7 +73,7 @@ class GizmoRenderer {
   }
 
   render() {
-    console.log("plane ", this.planeVertices);
+    // console.log("plane ", this.planeVertices);
     if (!settings.showGizmo || this.planeVertices.length === 0) return;
 
     gl.useProgram(this.program);

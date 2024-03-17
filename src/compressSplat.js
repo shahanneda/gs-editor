@@ -13,7 +13,7 @@ async function startCompression(filename) {
   // const data = await compressSplat(content.buffer);
   // // const reader = response.body.getReader();
   var buffer = fs.readFileSync(filename);
-  outputName = filename.split(".")[0] + ".cply";
+  outputName = filename.split(".")[0] + ".csply";
   console.log(outputName);
   // let content2 = new Uint8Array(buffer.buffer);
   // console.log(content2);
@@ -50,7 +50,7 @@ async function compressSplat(content, outputName) {
 
   // Helpers
   const sigmoid = (m1) => 1 / (1 + Math.exp(-m1));
-  const NUM_PROPS = 62;
+  const NUM_PROPS = 63;
 
   // Create a dataview to access the buffer's content on a byte levele
   const view = new DataView(content);
@@ -74,10 +74,11 @@ async function compressSplat(content, outputName) {
 
     const H_END = 6 + 48; // Offset of the last harmonic coefficient
     const opacity = fromDataView(splatID, H_END);
-    const scale = fromDataView(splatID, H_END + 1, H_END + 4);
-    const rotation = fromDataView(splatID, H_END + 4, H_END + 8);
+    const instance = fromDataView(splatID, H_END + 1);
+    const scale = fromDataView(splatID, H_END + 2, H_END + 5);
+    const rotation = fromDataView(splatID, H_END + 5, H_END + 9);
 
-    return { position, harmonic, opacity, scale, rotation };
+    return { position, harmonic, opacity, scale, rotation, instance };
   };
 
   // format is opacity (1), color(3), cov3d(6), position(3)
@@ -86,7 +87,7 @@ async function compressSplat(content, outputName) {
   for (let i = 0; i < gaussianCount; i++) {
     currentSpat = [];
     // Extract data for current gaussian
-    let { position, harmonic, opacity, scale, rotation } = extractSplatData(i);
+    let { position, harmonic, opacity, scale, rotation, instance } = extractSplatData(i);
 
     // Update scene bounding box
     sceneMin = sceneMin.map((v, j) => Math.min(v, position[j]));
@@ -140,6 +141,7 @@ async function compressSplat(content, outputName) {
     currentSpat.push(...color);
     currentSpat.push(...cov3D);
     currentSpat.push(...position);
+    currentSpat.push(instance);
     // console.log(currentSpat);
     out.push(...currentSpat);
   }
