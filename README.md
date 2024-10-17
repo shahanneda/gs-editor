@@ -1,4 +1,4 @@
-#
+# gs-editor
 
 To run, open up index.html using a server (use VSCode Live Server extension).
 
