@@ -9,6 +9,8 @@ in float depth;
 in vec4 con_o;
 in vec2 xy;
 in vec2 pixf;
+in float isEraser;
+in float v_isEraser;
 
 out vec4 fragColor;
 
@@ -47,5 +49,10 @@ void main() {
     }
 
     // Eq. (3) from 3D Gaussian splatting paper.
-    fragColor = vec4(color * alpha, alpha);
+    if (v_isEraser > 0.5) {
+        // Render eraser Gaussians differently (e.g., semi-transparent)
+        fragColor = vec4(1.0, 0.0, 1.0, 0.5);
+    } else {
+        fragColor = vec4(color * alpha, alpha);
+    }
 }

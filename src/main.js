@@ -21,6 +21,11 @@ let colorBuffer,
   colorData;
 globalData = undefined;
 
+// Add these variables at the top of the file
+let eraserCursor = null;
+let eraserCursorContext = null;
+let buffers; // Declare buffers at the top of the file
+
 const urlParams = new URLSearchParams(window.location.search);
 let startingScene = urlParams.get("scene");
 if (!startingScene) {
@@ -52,6 +57,7 @@ const settings = {
   calibrateCamera: () => {},
   finishCalibration: () => {},
   showGizmo: true,
+  eraserSize: 0.1,
 };
 
 const defaultCameraParameters = {
@@ -113,7 +119,10 @@ const defaultCameraParameters = {
 };
 
 const updateBuffer = (buffer, data) => {
-  // console.log("setting buffer", buffer, "data", data);
+  if (!data || data.length === 0) {
+    console.warn("Attempted to update buffer with no data");
+    return;
+  }
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
 };
@@ -121,11 +130,59 @@ const updateBuffer = (buffer, data) => {
 const isLocalHost =
   location.hostname === "localhost" || location.hostname === "127.0.0.1";
 
+async function setupWebglContext() {
+  const canvas = document.querySelector('canvas')
+  const gl = canvas.getContext('webgl2')
+
+  // Handle canvas resize
+  const resizeObserver = new ResizeObserver(onCanvasResize)
+  resizeObserver.observe(canvas, {box: 'content-box'})
+
+  // Load shaders
+  const vertexShaderSource = await fetchFile('shaders/splat_vertex.glsl')
+  const fragmentShaderSource = await fetchFile('shaders/splat_fragment.glsl')
+
+  // Create shader program
+  const program = createProgram(gl, vertexShaderSource, fragmentShaderSource)
+
+  // Set correct blending
+  gl.disable(gl.DEPTH_TEST)
+  gl.enable(gl.BLEND)
+  gl.blendFunc(gl.ONE_MINUS_DST_ALPHA, gl.ONE)
+
+  return { glContext: gl, glProgram: program }
+}
+
+function setupBuffers(gl, program) {
+  const setupAttributeBuffer = (name, components) => {
+    const location = gl.getAttribLocation(program, name)
+    const buffer = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(gaussianCount * components), gl.DYNAMIC_DRAW)
+    gl.enableVertexAttribArray(location)
+    gl.vertexAttribPointer(location, components, gl.FLOAT, false, 0, 0)
+    gl.vertexAttribDivisor(location, 1)
+    return buffer
+  }
+
+  // Create attribute buffers
+  const buffers = {
+    color: setupAttributeBuffer('a_col', 3),
+    center: setupAttributeBuffer('a_center', 3),
+    opacity: setupAttributeBuffer('a_opacity', 1),
+    covA: setupAttributeBuffer('a_covA', 3),
+    covB: setupAttributeBuffer('a_covB', 3),
+    isEraser: setupAttributeBuffer('a_isEraser', 1),
+  }
+
+  return buffers
+}
+
 async function main() {
-  // Setup webgl context and buffers
-  const { glContext, glProgram, buffers } = await setupWebglContext();
+  // Setup webgl context
+  const { glContext, glProgram } = await setupWebglContext();
   gl = glContext;
-  program = glProgram; // Handy global vars
+  program = glProgram;
 
   if (gl == null || program == null) {
     document.querySelector("#loading-text").style.color = `red`;
@@ -142,44 +199,33 @@ async function main() {
   worker.onmessage = (e) => {
     const { data, sortTime } = e.data;
 
-    globalData = {
-      gaussians: {
-        ...data,
-        // ...globalData.gaussians,
-        // colors: data.colors,
-        // cov3Ds: globalData.gaussians.cov3Ds,
-        // cov3Da: globalData.gaussians.cov3Da,
-        // cov3Db: globalData.gaussians.cov3Db,
-        count: gaussianCount,
-      },
-    };
+    console.log("Received sorted data:", data);
 
-    if (
-      getComputedStyle(document.querySelector("#loading-container")).opacity !=
-      0
-    ) {
-      document.querySelector("#loading-container").style.opacity = 0;
-      cam.disableMovement = false;
+    if (buffers) {
+      updateBuffer(buffers.color, data.colors);
+      updateBuffer(buffers.center, data.positions);
+      updateBuffer(buffers.opacity, data.opacities);
+      updateBuffer(buffers.covA, data.cov3Da);
+      updateBuffer(buffers.covB, data.cov3Db);
+      updateBuffer(buffers.isEraser, globalData.gaussians.isEraser);
+
+      console.log("Buffers updated");
+
+      // Needed for the gizmo renderer
+      positionBuffer = buffers.center;
+      opacityBuffer = buffers.opacity;
+      colorBuffer = buffers.color;
+      colorData = data.colors;
+      positionData = data.positions;
+      opacityData = data.opacities;
+
+      settings.sortTime = sortTime;
+
+      isWorkerSorting = false;
+      requestRender();
+    } else {
+      console.error("Buffers not initialized");
     }
-
-    updateBuffer(buffers.color, data.colors);
-    updateBuffer(buffers.center, data.positions);
-    updateBuffer(buffers.opacity, data.opacities);
-    updateBuffer(buffers.covA, data.cov3Da);
-    updateBuffer(buffers.covB, data.cov3Db);
-
-    // Needed for the gizmo renderer
-    positionBuffer = buffers.center;
-    opacityBuffer = buffers.opacity;
-    colorBuffer = buffers.color;
-    colorData = data.colors;
-    positionData = data.positions;
-    opacityData = data.opacities;
-
-    settings.sortTime = sortTime;
-
-    isWorkerSorting = false;
-    requestRender();
   };
 
   // Setup GUI
@@ -190,22 +236,40 @@ async function main() {
 
   // Load the default scene
   await loadScene({ scene: settings.scene });
+
+  // Set up initial cursor
+  updateCursor();
+
+  // Add an event listener for cursor updates
+  gl.canvas.addEventListener('mousemove', (e) => {
+    if (settings.editingMode === 'eraser') {
+      updateEraserCursor();
+    }
+  });
 }
 
 function handleInteractive(e) {
-  if (e.altKey && e.ctrlKey) {
-    moveUp(e.clientX, e.clientY);
-  } else if (e.ctrlKey) {
-    // colorRed(e.clientX, e.clientY);
-    removeOpacity(e.clientX, e.clientY);
-  } else if (e.altKey) {
-    if (settings.editingMode == "remove") {
-      removeOpacity(e.clientX, e.clientY);
-    } else if (settings.editingMode == "move") {
-      moveUp(e.clientX, e.clientY);
-    } else {
-      interactiveColor(e.clientX, e.clientY);
+  if (e.altKey) {
+    switch (settings.editingMode) {
+      case "remove":
+        removeOpacity(e.clientX, e.clientY);
+        break;
+      case "move":
+        moveUp(e.clientX, e.clientY);
+        break;
+      case "carve":
+        carveOpacity(e.clientX, e.clientY);
+        break;
+      case "eraser":
+        createEraserGaussian(e.clientX, e.clientY);
+        break;
+      case "color":
+        interactiveColor(e.clientX, e.clientY);
+        break;
+      default:
+        console.warn(`Unknown editing mode: ${settings.editingMode}`);
     }
+    requestRender(); // Ensure we re-render after any interaction
   }
 }
 
@@ -307,6 +371,16 @@ function moveUp(x, y) {
   // updateBuffer(buffers.center, data.positions);
 }
 
+function carveOpacity(x, y) {
+  const hit = cam.raycast(x, y);
+  const hits = getGuassiansWithinDistance(hit.pos, settings.selectionSize);
+  console.log("hits", hits);
+  hits.forEach((hit) => {
+    const i = hit.id;
+    globalData.gaussians.opacities[i] = 0;
+  });
+}
+
 function removeOpacity(x, y) {
   const hit = cam.raycast(x, y);
   const hits = getGuassiansWithinDistance(hit.pos, settings.selectionSize);
@@ -406,16 +480,29 @@ async function loadScene({ scene, file }) {
     gaussians: {
       ...data,
       count: gaussianCount,
+      isEraser: new Uint8Array(gaussianCount),
     },
   };
-  // console.log(globalData);
+
+  console.log("Loaded Gaussians:", globalData.gaussians);
+
+  // Setup buffers after loading the scene data
+  buffers = setupBuffers(gl, program);
+
+  // Update buffers with initial data
+  updateBuffer(buffers.color, globalData.gaussians.colors);
+  updateBuffer(buffers.center, globalData.gaussians.positions);
+  updateBuffer(buffers.opacity, globalData.gaussians.opacities);
+  updateBuffer(buffers.covA, globalData.gaussians.cov3Da);
+  updateBuffer(buffers.covB, globalData.gaussians.cov3Db);
+  updateBuffer(buffers.isEraser, globalData.gaussians.isEraser);
 
   // Send gaussian data to the worker
-
   worker.postMessage({
     gaussians: {
       ...data,
       count: gaussianCount,
+      isEraser: new Uint8Array(gaussianCount),
     },
   });
 
@@ -427,6 +514,8 @@ async function loadScene({ scene, file }) {
   if (cam == null) cam = new Camera(cameraParameters);
   else cam.setParameters(cameraParameters);
   cam.update();
+
+  console.log("Camera set up:", cam);
 
   // Update GUI
   settings.maxGaussians = gaussianCount;
@@ -442,6 +531,10 @@ function requestRender(...params) {
 
 // Render a frame on the canvas
 function render(width, height, res) {
+  console.log("Rendering frame");
+  console.log("Gaussian count:", globalData.gaussians.count);
+  console.log("Max Gaussians:", settings.maxGaussians);
+
   // Update canvas size
   const resolution = res ?? settings.renderResolution;
   const canvasWidth = width ?? Math.round(canvasSize[0] * resolution);
@@ -499,7 +592,9 @@ function render(width, height, res) {
   );
 
   // Draw
-  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, settings.maxGaussians);
+  const gaussiansToDraw = Math.min(settings.maxGaussians, globalData.gaussians.count);
+  console.log("Drawing Gaussians:", gaussiansToDraw);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, gaussiansToDraw);
 
   // Draw gizmo
   gizmoRenderer.render();
@@ -520,6 +615,94 @@ function render(width, height, res) {
       () => requestRender(nextWidth, nextHeight, nextResolution),
       200
     );
+  }
+}
+
+function createEraserGaussian(x, y) {
+  console.log("Creating eraser gaussian at", x, y);
+  const hit = cam.raycast(x, y);
+  if (!hit) {
+    console.log("No hit detected");
+    return;
+  }
+
+  console.log("Hit detected at", hit.pos);
+
+  const newIndex = globalData.gaussians.count;
+  globalData.gaussians.count++;
+
+  // Set position
+  globalData.gaussians.positions[newIndex * 3] = hit.pos[0];
+  globalData.gaussians.positions[newIndex * 3 + 1] = hit.pos[1];
+  globalData.gaussians.positions[newIndex * 3 + 2] = hit.pos[2];
+
+  // Set opacity (negative for eraser)
+  globalData.gaussians.opacities[newIndex] = -1;
+
+  // Set color (can be distinctive for visualization)
+  globalData.gaussians.colors[newIndex * 3] = 1;
+  globalData.gaussians.colors[newIndex * 3 + 1] = 0;
+  globalData.gaussians.colors[newIndex * 3 + 2] = 1;
+
+  // Set covariance (adjusted for eraser size)
+  const eraserSize = settings.eraserSize;
+  globalData.gaussians.cov3Da[newIndex * 3] = eraserSize;
+  globalData.gaussians.cov3Da[newIndex * 3 + 1] = 0;
+  globalData.gaussians.cov3Da[newIndex * 3 + 2] = 0;
+  globalData.gaussians.cov3Db[newIndex * 3] = 0;
+  globalData.gaussians.cov3Db[newIndex * 3 + 1] = eraserSize;
+  globalData.gaussians.cov3Db[newIndex * 3 + 2] = eraserSize;
+
+  // Mark as eraser
+  globalData.gaussians.isEraser[newIndex] = 1;
+
+  console.log("Created eraser gaussian at index", newIndex);
+
+  // Update buffers
+  updateBuffer(buffers.center, globalData.gaussians.positions);
+  updateBuffer(buffers.opacity, globalData.gaussians.opacities);
+  updateBuffer(buffers.color, globalData.gaussians.colors);
+  updateBuffer(buffers.covA, globalData.gaussians.cov3Da);
+  updateBuffer(buffers.covB, globalData.gaussians.cov3Db);
+  updateBuffer(buffers.isEraser, globalData.gaussians.isEraser);
+
+  // Update worker
+  worker.postMessage(globalData);
+  cam.updateWorker();
+  requestRender();
+}
+
+// Modify updateEraserCursor function
+function updateEraserCursor() {
+  if (!gl || !gl.canvas) return;
+
+  if (!eraserCursor) {
+    eraserCursor = document.createElement('canvas');
+    eraserCursor.width = 64;
+    eraserCursor.height = 64;
+    eraserCursorContext = eraserCursor.getContext('2d');
+  }
+
+  const size = Math.min(32, Math.max(4, settings.eraserSize * 32));
+  eraserCursorContext.clearRect(0, 0, 64, 64);
+  eraserCursorContext.beginPath();
+  eraserCursorContext.arc(32, 32, size, 0, Math.PI * 2);
+  eraserCursorContext.fillStyle = 'rgba(255, 0, 255, 0.3)';
+  eraserCursorContext.fill();
+  eraserCursorContext.strokeStyle = 'rgba(255, 0, 255, 0.8)';
+  eraserCursorContext.stroke();
+
+  gl.canvas.style.cursor = `url(${eraserCursor.toDataURL()}) 32 32, auto`;
+}
+
+// Modify updateCursor function
+function updateCursor() {
+  if (!gl || !gl.canvas) return;
+
+  if (settings.editingMode === 'eraser') {
+    updateEraserCursor();
+  } else {
+    gl.canvas.style.cursor = 'default';
   }
 }
 

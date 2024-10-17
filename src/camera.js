@@ -416,10 +416,11 @@ class Camera {
     for (let i = 0; i < gaussianCount; i++) {
       const pos = positionData.slice(i * 3, i * 3 + 3);
       const alpha = opacityData[i];
+      const isEraser = globalData.gaussians.isEraser[i];
 
-      if (alpha < 0.1) continue;
+      if (alpha < 0.1 && !isEraser) continue;
 
-      const t = raySphereIntersection(this.pos, rd, pos, 0.1);
+      const t = raySphereIntersection(this.pos, rd, pos, isEraser ? settings.eraserSize : 0.1);
 
       if (t > 0.4 && t < hit.dist) {
         hit.id = i;

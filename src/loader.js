@@ -114,6 +114,9 @@ async function loadPly(content) {
     // scales.push(...scale)
 
     positions.push(...position);
+
+    // Initialize isEraser property
+    data.isEraser[i] = 0;
   }
 
   console.log("opacitiy", opacities[1]);

@@ -5,6 +5,7 @@ let depthIndex;
 onmessage = function (event) {
   // Init web worker event
   if (event.data.gaussians) {
+    console.log("Worker received Gaussians:", event.data.gaussians);
     gaussians = event.data.gaussians;
     gaussians.totalCount = gaussians.count;
 
@@ -37,6 +38,7 @@ onmessage = function (event) {
   }
   // Sort gaussians event
   else if (event.data.viewMatrix) {
+    console.log("Worker sorting Gaussians");
     const { viewMatrix, maxGaussians, sortingAlgorithm } = event.data;
 
     const start = performance.now();
@@ -80,10 +82,7 @@ onmessage = function (event) {
     }
 
     const sortTime = `${((performance.now() - start) / 1000).toFixed(3)}s`;
-    // console.log(
-    // `[Worker] Sorted ${gaussians.count} gaussians in ${sortTime}. Algorithm: ${sortingAlgorithm}`
-    // );
-    //     );
+    console.log("Worker sending sorted data");
     postMessage({
       data,
       sortTime,
@@ -153,6 +152,17 @@ function sortGaussiansByDepth(
     for (let i = 0; i < gaussians.count; i++)
       depthIndex[starts0[sizeList[i]]++] = i;
   }
+
+  // After sorting, check for intersections with eraser Gaussians
+  for (let i = 0; i < gaussians.count; i++) {
+    if (gaussians.isEraser[i]) {
+      for (let j = 0; j < gaussians.count; j++) {
+        if (!gaussians.isEraser[j] && gaussianIntersect(gaussians, i, j)) {
+          gaussians.opacities[j] = 0;
+        }
+      }
+    }
+  }
 }
 
 // Quicksort algorithm - https://en.wikipedia.org/wiki/Quicksort#Hoare_partition_scheme
@@ -186,4 +196,15 @@ function partition(A, B, lo, hi) {
     B[i] = B[j];
     B[j] = tmp; // Swap B
   }
+}
+
+function gaussianIntersect(gaussians, i, j) {
+  const dx = gaussians.positions[i * 3] - gaussians.positions[j * 3];
+  const dy = gaussians.positions[i * 3 + 1] - gaussians.positions[j * 3 + 1];
+  const dz = gaussians.positions[i * 3 + 2] - gaussians.positions[j * 3 + 2];
+  const distSquared = dx * dx + dy * dy + dz * dz;
+  const radiusI = Math.sqrt(gaussians.cov3Da[i * 3]);
+  const radiusJ = Math.sqrt(gaussians.cov3Da[j * 3]);
+  const radiusSum = gaussians.isEraser[i] ? radiusI : radiusI + radiusJ;
+  return distSquared <= radiusSum * radiusSum;
 }

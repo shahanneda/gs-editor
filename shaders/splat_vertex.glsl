@@ -4,6 +4,7 @@ in vec3 a_col;
 in float a_opacity;
 in vec3 a_covA;
 in vec3 a_covB;
+in float a_isEraser;
 
 uniform float W;
 uniform float H;
@@ -23,6 +24,8 @@ out float scale_modif;
 out vec4 con_o;
 out vec2 xy;
 out vec2 pixf;
+out float isEraser;
+out float v_isEraser;
 
 vec3 computeCov2D(vec3 mean, float focal_x, float focal_y, float tan_fovx, float tan_fovy, float[6] cov3D, mat4 viewmatrix) {
     vec4 t = viewmatrix * vec4(mean, 1.0);
@@ -137,4 +140,8 @@ void main() {
     vec2 clip_pos = screen_pos / vec2(W, H) * 2. - 1.;
 
     gl_Position = vec4(clip_pos, 0, 1);
+
+    // Pass isEraser to fragment shader
+    isEraser = a_isEraser;
+    v_isEraser = a_isEraser;
 }
