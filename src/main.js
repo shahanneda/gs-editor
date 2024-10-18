@@ -21,6 +21,11 @@ let colorBuffer,
   colorData;
 globalData = undefined;
 
+// Add these variables at the top of the file
+let eraserCursor = null;
+let eraserCursorContext = null;
+// let buffers;
+
 const urlParams = new URLSearchParams(window.location.search);
 let startingScene = urlParams.get("scene");
 if (!startingScene) {
@@ -52,6 +57,7 @@ const settings = {
   calibrateCamera: () => {},
   finishCalibration: () => {},
   showGizmo: true,
+  eraserSize: 0.1,
 };
 
 const defaultCameraParameters = {
@@ -190,6 +196,16 @@ async function main() {
 
   // Load the default scene
   await loadScene({ scene: settings.scene });
+
+  // Setup initial cursor
+  updateCursor();
+
+  // Add an event listener for cursor updates
+  gl.canvas.addEventListener('mousemove', (e) => {
+    if (settings.editingMode === 'eraser') {
+      updateEraserCursor();
+    }
+  });
 }
 
 function handleInteractive(e) {
@@ -203,6 +219,8 @@ function handleInteractive(e) {
       removeOpacity(e.clientX, e.clientY);
     } else if (settings.editingMode == "move") {
       moveUp(e.clientX, e.clientY);
+    } else if (settings.editingMode == "eraser") {
+      createEraserGaussian(e.clientX, e.clientY);
     } else {
       interactiveColor(e.clientX, e.clientY);
     }
@@ -520,6 +538,44 @@ function render(width, height, res) {
       () => requestRender(nextWidth, nextHeight, nextResolution),
       200
     );
+  }
+}
+
+function createEraserGaussian(x, y) {
+  console.log("creating eraser gaussian at", x, y);
+}
+
+// Modify updateEraserCursor function
+function updateEraserCursor() {
+  if (!gl || !gl.canvas) return;
+
+  if (!eraserCursor) {
+    eraserCursor = document.createElement('canvas');
+    eraserCursor.width = 64;
+    eraserCursor.height = 64;
+    eraserCursorContext = eraserCursor.getContext('2d');
+  }
+
+  const size = Math.min(32, Math.max(4, settings.eraserSize * 32));
+  eraserCursorContext.clearRect(0, 0, 64, 64);
+  eraserCursorContext.beginPath();
+  eraserCursorContext.arc(32, 32, size, 0, Math.PI * 2);
+  eraserCursorContext.fillStyle = 'rgba(255, 0, 255, 0.3)';
+  eraserCursorContext.fill();
+  eraserCursorContext.strokeStyle = 'rgba(255, 0, 255, 0.8)';
+  eraserCursorContext.stroke();
+
+  gl.canvas.style.cursor = `url(${eraserCursor.toDataURL()}) 32 32, auto`;
+}
+
+// Modify updateCursor function
+function updateCursor() {
+  if (!gl || !gl.canvas) return;
+
+  if (settings.editingMode === 'eraser') {
+    updateEraserCursor();
+  } else {
+    gl.canvas.style.cursor = 'default';
   }
 }
 

@@ -1,5 +1,5 @@
 const SORTING_ALGORITHMS = ["count sort", "quick sort", "Array.sort"];
-const EDITING_MODES = ["color", "remove", "move"];
+const EDITING_MODES = ["color", "remove", "move", "eraser"];
 
 let maxGaussianController = null;
 let camController = {
@@ -43,7 +43,8 @@ function initGUI() {
       }, 100);
     });
 
-  gui.add(settings, "editingMode", EDITING_MODES).name("Editing(ALT + CLICK)");
+  gui.add(settings, "editingMode", EDITING_MODES).name("Editing(ALT + CLICK)").onChange(updateCursor);
+  gui.add(settings, "eraserSize", 0.01, 1, 0.01).name("Eraser Size").onChange(updateEraserCursor);
   // gui.add(settings, "Hello");
 
   gui.add(settings, "selectionSize", 0.01, 5, 0.01).name("Selection Size");
