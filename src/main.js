@@ -421,6 +421,11 @@ function sampleBoundaryPoints(gaussian, removeCenter, removeRadius, numPoints) {
         if (distToCenter > removeRadius) {
             points.push(pointOnGaussian);
         }
+        else{
+            // Find the point where the ray from Gaussian center intersects with the remove region's boundary
+            const pointOnBoundary = getPointOnBoundary(gaussian.position, randomDirection, removeCenter, removeRadius);
+            points.push(pointOnBoundary);
+        }
     }
     console.log("points:", points);
     return points;
@@ -434,6 +439,37 @@ function getPointOnEllipsoid(center, covariance, direction) {
     // Compute the point on the ellipsoid
     const point = vec3.add([], center, scaledDirection);
     return point;
+}
+
+// Updated getPointOnBoundary function to correctly sample from the boundary of the removal region
+function getPointOnBoundary(gaussianCenter, direction, removeCenter, removeRadius) {
+    // Define the vector from the Gaussian center to the remove center
+    const originToRemoveCenter = vec3.subtract([], removeCenter, gaussianCenter);
+
+    // Coefficients for the quadratic equation to find the intersection point of the ray with the sphere (removal region)
+    const a = vec3.dot(direction, direction); // This will be 1 for a unit vector
+    const b = 2 * vec3.dot(direction, originToRemoveCenter);
+    const c = vec3.dot(originToRemoveCenter, originToRemoveCenter) - removeRadius * removeRadius;
+
+    // Solve the quadratic equation: a * t^2 + b * t + c = 0
+    const discriminant = b * b - 4 * a * c;
+
+    if (discriminant < 0) {
+        // No real solutions, no intersection
+        return null;
+    }
+
+    // Calculate the two possible solutions (t values)
+    const t1 = (-b - Math.sqrt(discriminant)) / (2 * a);
+    const t2 = (-b + Math.sqrt(discriminant)) / (2 * a);
+
+    // Use the smaller t to get the first intersection point (closest to the Gaussian center)
+    const t = Math.min(t1, t2);
+
+    // Compute the intersection point: gaussianCenter + t * direction
+    const intersectionPoint = vec3.add([], gaussianCenter, vec3.scale([], direction, t));
+
+    return intersectionPoint;
 }
 
 // Helper function to fit an ellipsoid to a set of points using least squares
