@@ -327,7 +327,8 @@ function moveUp(x, y) {
 function removeOpacity(x, y) {
     const hit = cam.raycast(x, y);  // Get the clicked position in 3D space
     const removeCenter = hit.pos;
-    const gaussiansWithinDistance = getGuassiansWithinDistance(hit.pos, settings.selectionSize);
+    const removeRadius = settings.selectionSize;
+    const gaussiansWithinDistance = getGuassiansWithinDistance(removeCenter, removeRadius);
     console.log("hits", gaussiansWithinDistance);
 
     // For each hit, determine if the Gaussian is a boundary Gaussian and approximate the outside region
@@ -343,7 +344,7 @@ function removeOpacity(x, y) {
         };
 
         // If the Gaussian is a boundary Gaussian, compute the new Gaussian outside the removal region
-        const newGaussian = approximateGaussianOutside(gaussian, removeCenter, settings.selectionSize);
+        const newGaussian = approximateGaussianOutside(gaussian, removeCenter, removeRadius);
 
         // Replace the original Gaussian with the new one
         if (newGaussian) {
@@ -364,7 +365,10 @@ function removeOpacity(x, y) {
     });
 
     // Update buffers and trigger render
+    updateBuffer(positionBuffer, globalData.gaussians.positions);
+    updateBuffer(colorBuffer, globalData.gaussians.colors);
     updateBuffer(opacityBuffer, globalData.gaussians.opacities);
+
     requestRender();
     cam.needsWorkerUpdate = true;
     worker.postMessage(globalData);
@@ -375,10 +379,10 @@ function removeOpacity(x, y) {
 function approximateGaussianOutside(gaussian, removeCenter, removeRadius) {
     const { position: mu, cov3Da: cov3Da, cov3Db: cov3Db, color: color, opacity: opacity } = gaussian;
 
-    // Step 1: Check if the Gaussian center is within the removal region
-    const distCenter = vec3.distance(mu, removeCenter);
-    if (distCenter < removeRadius) {
-        // Step 2: If the center is inside, sample points on the boundary of the intersection
+    // Step 1: Check if the Gaussian center is outside the removal region
+    const distToRemove = vec3.distance(mu, removeCenter);
+    if (distToRemove >= removeRadius) {
+        // Step 2: If the center is outside, sample points on the boundary of the intersection
         const boundaryPoints = sampleBoundaryPoints(gaussian, removeCenter, removeRadius, 10);  // Sample 10 points
 
         // Step 3: Fit an ellipsoid to the sampled points using least squares
@@ -410,12 +414,13 @@ function sampleBoundaryPoints(gaussian, removeCenter, removeRadius, numPoints) {
         [b, d, e],
         [c, e, f],
     ];
+    const intensityThreshold = 0.168;  // For 70% volume
     for (let i = 0; i < numPoints; i++) {
         // Sample random directions on the Gaussian ellipsoid
         const randomDirection = getRandomUnitVector();
 
         // Find points on the Gaussian's contour using the covariance
-        const pointOnGaussian = getPointOnEllipsoid(gaussian.position, Sigma, randomDirection);
+        const pointOnGaussian = getPointOnEllipsoid(gaussian.position, Sigma, randomDirection, intensityThreshold);
 
         // Check if the point is outside the removal region (distance > removeRadius)
         const distToCenter = vec3.distance(pointOnGaussian, removeCenter);
@@ -432,14 +437,26 @@ function sampleBoundaryPoints(gaussian, removeCenter, removeRadius, numPoints) {
     return points;
 }
 
-// Helper function to get a point on the Gaussian ellipsoid in a random direction
-function getPointOnEllipsoid(center, covariance, direction) {
-    // Scale the direction vector based on the Gaussian covariance
-    const scaledDirection = vec3.transformMat3([], direction, covariance);
+// Helper function to get a point on the Gaussian ellipsoid's boundary at a specific intensity threshold
+function getPointOnEllipsoid(center, covariance, direction, intensityThreshold) {
+    // The direction vector is a unit vector pointing away from the center
+    const unitDirection = vec3.normalize([], direction);
 
-    // Compute the point on the ellipsoid
-    const point = vec3.add([], center, scaledDirection);
-    return point;
+    // To get the scale factor (distance from center), we solve for the distance
+    // such that the Gaussian function's value is equal to the intensity threshold.
+    // The ellipsoid equation is (x - mu)^T * Sigma^-1 * (x - mu) = constant.
+    // The intensity threshold gives us the value of this constant.
+
+    // First, scale the direction vector by the covariance matrix
+    const scaledDirection = vec3.transformMat3([], unitDirection, covariance);
+
+    // Compute the scaling factor for the boundary contour based on the intensity threshold
+    const scaleFactor = Math.sqrt(-2 * Math.log(intensityThreshold));  // Example: intensity threshold defines contour
+
+    // Scale the direction by the scale factor to find the point on the ellipsoid
+    const boundaryPoint = vec3.scaleAndAdd([], center, scaledDirection, scaleFactor);
+
+    return boundaryPoint;
 }
 
 // Updated getPointOnBoundary function to correctly sample from the boundary of the removal region
@@ -473,21 +490,25 @@ function getPointOnBoundary(gaussianCenter, direction, removeCenter, removeRadiu
     return intersectionPoint;
 }
 
-// Helper function to fit an ellipsoid to a set of points using least squares
-function fitEllipsoidToPoints(points) {
+// Helper function to fit an ellipsoid to a set of points using least squares and intensity threshold
+function fitEllipsoidToPoints(points, intensityThreshold) {
     const n = points.length;
     if (n < 5) {
         console.error("Not enough points to fit an ellipsoid");
         return null;
     }
 
-    // Least squares ellipsoid fitting algorithm
+    // Scale the points based on the intensity threshold
+    const scalingFactor = Math.sqrt(-2 * Math.log(intensityThreshold));  // Mahalanobis distance scaling factor
+
     const A = [];
     const B = [];
 
     // Construct the least squares matrix A and vector B
     points.forEach(point => {
-        const [x, y, z] = point;
+        // Scale the point to match the contour of the desired intensity threshold
+        const scaledPoint = vec3.scale([], point, scalingFactor);
+        const [x, y, z] = scaledPoint;
         A.push([x * x, y * y, z * z, 2 * x * y, 2 * x * z, 2 * y * z, 2 * x, 2 * y, 2 * z]);
         B.push(1);  // Right-hand side of the equation for least squares fitting
     });
@@ -531,16 +552,30 @@ function solveLeastSquares(A, B) {
 
 // Helper function to extract ellipsoid center from the least squares solution
 function extractEllipsoidCenter(p) {
-    // The last three parameters of the solution vector correspond to the ellipsoid center
-    return [p[6], p[7], p[8]];
+    // The center coordinates (x_0, y_0, z_0) are calculated as follows:
+    const x0 = -p[6] / p[0];  // G / A
+    const y0 = -p[7] / p[1];  // H / B
+    const z0 = -p[8] / p[2];  // I / C
+
+    return [x0, y0, z0];
 }
 
 // Helper function to extract ellipsoid covariance from the least squares solution
 function extractEllipsoidCovariance(p) {
-    // p contains the upper triangle values of the covariance matrix
-    // The covariance matrix is symmetric, so we only store the upper triangle
-    const cov3Da = [p[0], p[3], p[4]];  // Elements: [a, b, c]
-    const cov3Db = [p[1], p[5], p[2]];  // Elements: [d, e, f]
+    // Construct the covariance matrix:
+    // Diagonal terms (variance along x, y, z axes)
+    const sigma_xx = 1 / p[0];
+    const sigma_yy = 1 / p[1];
+    const sigma_zz = 1 / p[2];
+    
+    // Off-diagonal terms (covariance terms, normalized)
+    const sigma_xy = p[3] / (p[0] * p[1]);  // D / (A * B)
+    const sigma_xz = p[4] / (p[0] * p[2]);  // E / (A * C)
+    const sigma_yz = p[5] / (p[1] * p[2]);  // F / (B * C)
+
+    // Upper triangular part of the covariance matrix
+    const cov3Da = [sigma_xx, sigma_xy, sigma_xz];
+    const cov3Db = [sigma_yy, sigma_yz, sigma_zz];
 
     return [cov3Da, cov3Db];
 }
