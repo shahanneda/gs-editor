@@ -209,24 +209,6 @@ function handleInteractive(e) {
     }
 }
 
-function getGuassiansWithinDistance(pos, threshold) {
-    const hits = [];
-    for (let i = 0; i < gaussianCount; i++) {
-        const gPos = globalData.gaussians.positions.slice(i * 3, i * 3 + 3);
-        const dist = vec3.distance(gPos, pos);
-        if (dist < threshold) {
-            hits.push({
-                id: i,
-            });
-        }
-    }
-    return hits;
-}
-
-// function vec3_array_mean(){
-
-// }
-
 function getGuassiansSameColor(pos, id, posThreshold, colorThreshold) {
     let targetColors = [globalData.gaussians.colors.slice(id * 3, id * 3 + 3)];
     const hits = [];
@@ -330,7 +312,8 @@ function removeOpacity(x, y) {
     const removeRadius = settings.selectionSize;
     const gaussiansWithinDistance = getGuassiansWithinDistance(removeCenter, removeRadius);
     console.log("hits", gaussiansWithinDistance);
-
+    let numRemoved = 0;
+    let numReplaced = 0;
     // For each hit, determine if the Gaussian is a boundary Gaussian and approximate the outside region
     gaussiansWithinDistance.forEach((g) => {
         const i = g.id;
@@ -358,12 +341,16 @@ function removeOpacity(x, y) {
             // Update colors and opacity
             globalData.gaussians.colors.set(newGaussian.color, 3 * i);
             globalData.gaussians.opacities[i] = newGaussian.opacity;
+            numReplaced += 1;
         } else {
             // If no new Gaussian is created, remove it by setting opacity to 0
             globalData.gaussians.opacities[i] = 0;
+            numRemoved += 1;
         }
     });
-
+    console.log("numReplaced / (numReplaced + numRemoved):", numReplaced / (numReplaced + numRemoved));
+    console.log("numReplaced + numRemoved:", numReplaced + numRemoved);
+    console.log("gaussiansWithinDistance.length:", gaussiansWithinDistance.length);
     // Update buffers and trigger render
     updateBuffer(positionBuffer, globalData.gaussians.positions);
     updateBuffer(colorBuffer, globalData.gaussians.colors);
@@ -374,6 +361,119 @@ function removeOpacity(x, y) {
     worker.postMessage(globalData);
     cam.updateWorker();
 }
+
+// ====================================================================================================
+// ====================================================================================================
+
+function getGuassiansWithinDistance(pos, threshold, intensityThreshold) {
+    const hits = [];
+    for (let i = 0; i < gaussianCount; i++) {
+        const gPos = globalData.gaussians.positions.slice(i * 3, i * 3 + 3);
+        const dist = vec3.distance(gPos, pos);
+
+        // Check if the Gaussian center is within the removal region
+        if (dist < threshold) {
+            hits.push({
+                id: i,
+            });
+        }
+    }
+
+    // Also check for Gaussians intersecting with the boundary
+    const boundaryGaussians = getGaussiansOnBoundary(pos, threshold, intensityThreshold);
+    hits.push(...boundaryGaussians);
+
+    return hits;
+}
+
+// Updated getGaussiansOnBoundary function
+function getGaussiansOnBoundary(removeCenter, removeRadius, intensityThreshold) {
+    const boundaryHits = [];
+
+    for (let i = 0; i < gaussianCount; i++) {
+        const gPos = globalData.gaussians.positions.slice(i * 3, i * 3 + 3);
+
+        // Retrieve the covariance matrix (from cov3Da and cov3Db)
+        const [a, b, c] = globalData.gaussians.cov3Da.slice(i * 3, i * 3 + 3);
+        const [d, e, f] = globalData.gaussians.cov3Db.slice(i * 3, i * 3 + 3);
+        const Sigma = [
+            [a, b, c],
+            [b, d, e],
+            [c, e, f],
+        ];
+
+        // Test for intersection with the removal sphere
+        if (ellipsoidIntersectsSphere(Sigma, gPos, removeCenter, removeRadius, intensityThreshold)) {
+            boundaryHits.push({
+                id: i,
+            });
+        }
+    }
+
+    return boundaryHits;
+}
+
+// Helper function to perform the ellipsoid-sphere intersection test
+function ellipsoidIntersectsSphere(Sigma, gPos, removeCenter, removeRadius, intensityThreshold) {
+    // First, set up the eigenvalues (lambdas) and eigenvectors (Phi) for the ellipsoid
+    const SigmaInverse = math.inv(Sigma);
+    const scalingFactor = Math.sqrt(-2 * Math.log(intensityThreshold));
+
+    // Sphere covariance is removeRadius squared, times identity matrix
+    const SigmaSphere = [
+        [removeRadius * removeRadius, 0, 0],
+        [0, removeRadius * removeRadius, 0],
+        [0, 0, removeRadius * removeRadius]
+    ];
+
+    // Calculate lambdas and eigenvectors (Phi)
+    const eigResult = math.eigs(SigmaInverse, SigmaSphere);
+    const lambdas = eigResult.values;
+    const Phi = eigResult.vectors;
+
+    // Compute the Mahalanobis distance from the Gaussian center to the removal center
+    const diff = vec3.subtract([], gPos, removeCenter);
+    const v_squared = math.dotMultiply(math.transpose(Phi), diff).map(x => x * x);
+
+    // Minimize the K function to test for intersection
+    const result = minimizeScalar((s) => K_function(s, lambdas, v_squared, scalingFactor), [0.0, 0.5, 1.0]);
+
+    return result >= 0;  // Returns true if ellipsoid intersects the sphere
+}
+
+// K function for minimizing the ellipsoid-sphere intersection test
+function K_function(s, lambdas, v_squared, tau) {
+    let sum = 0;
+    for (let i = 0; i < lambdas.length; i++) {
+        sum += v_squared[i] * ((s * (1 - s)) / (1 + s * (lambdas[i] - 1)));
+    }
+    return 1 - (1 / tau ** 2) * sum;
+}
+
+// Perform the minimization of a scalar function (used in ellipsoid intersection test)
+function minimizeScalar(fn, bracket) {
+    const tol = 1e-5;
+    let [a, b, c] = bracket;
+
+    while ((c - a) > tol) {
+        const u = a + (b - a) / 1.618;
+        const v = b + (c - b) / 1.618;
+
+        const fu = fn(u);
+        const fv = fn(v);
+
+        if (fu < fv) {
+            c = v;
+        } else {
+            a = u;
+        }
+    }
+
+    return (a + c) / 2;
+}
+
+// ====================================================================================================
+// ====================================================================================================
 
 // Helper function to approximate the Gaussian outside the removal region
 function approximateGaussianOutside(gaussian, removeCenter, removeRadius) {
@@ -403,6 +503,9 @@ function approximateGaussianOutside(gaussian, removeCenter, removeRadius) {
     // Return null if no approximation is needed
     return null;
 }
+
+// ====================================================================================================
+// ====================================================================================================
 
 // Helper function to sample boundary points between the Gaussian and removal region
 function sampleBoundaryPoints(gaussian, removeCenter, removeRadius, numPoints) {
@@ -489,6 +592,19 @@ function getPointOnBoundary(gaussianCenter, direction, removeCenter, removeRadiu
 
     return intersectionPoint;
 }
+
+// Helper function to get a random unit vector (for sampling points on the ellipsoid)
+function getRandomUnitVector() {
+    const theta = Math.random() * 2 * Math.PI;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const x = Math.sin(phi) * Math.cos(theta);
+    const y = Math.sin(phi) * Math.sin(theta);
+    const z = Math.cos(phi);
+    return [x, y, z];
+}
+
+// ====================================================================================================
+// ====================================================================================================
 
 // Helper function to fit an ellipsoid to a set of points using least squares and intensity threshold
 function fitEllipsoidToPoints(points, intensityThreshold) {
@@ -580,15 +696,8 @@ function extractEllipsoidCovariance(p) {
     return [cov3Da, cov3Db];
 }
 
-// Helper function to get a random unit vector (for sampling points on the ellipsoid)
-function getRandomUnitVector() {
-    const theta = Math.random() * 2 * Math.PI;
-    const phi = Math.acos(2 * Math.random() - 1);
-    const x = Math.sin(phi) * Math.cos(theta);
-    const y = Math.sin(phi) * Math.sin(theta);
-    const z = Math.cos(phi);
-    return [x, y, z];
-}
+// ====================================================================================================
+// ====================================================================================================
 
 // Load a .ply scene specified as a name (URL fetch) or local file
 async function loadScene({ scene, file }) {
