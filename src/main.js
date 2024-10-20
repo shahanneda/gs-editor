@@ -480,11 +480,11 @@ function fitEllipsoidToPoints(points) {
         return null;
     }
 
-    // Implement least squares ellipsoid fitting algorithm (you can use any existing algorithm for this)
-
+    // Least squares ellipsoid fitting algorithm
     const A = [];
     const B = [];
 
+    // Construct the least squares matrix A and vector B
     points.forEach(point => {
         const [x, y, z] = point;
         A.push([x * x, y * y, z * z, 2 * x * y, 2 * x * z, 2 * y * z, 2 * x, 2 * y, 2 * z]);
@@ -499,19 +499,22 @@ function fitEllipsoidToPoints(points) {
         return null;
     }
 
-    // Extract ellipsoid parameters (center, covariance) from p
+    // Extract ellipsoid parameters (center, covariance) from the solution vector p
     const ellipsoidCenter = extractEllipsoidCenter(p);
-    const ellipsoidCovariance = extractEllipsoidCovariance(p);
+    
+    // Construct the covariance matrix as upper triangle (cov3Da and cov3Db)
+    const [cov3Da, cov3Db] = extractEllipsoidCovariance(p);
 
     return {
         center: ellipsoidCenter,
-        covariance: ellipsoidCovariance
+        cov3Da: cov3Da,  // First part of the upper triangle of covariance
+        cov3Db: cov3Db   // Second part of the upper triangle of covariance
     };
 }
 
 // Helper function to solve the least squares system
 function solveLeastSquares(A, B) {
-    // Import math.js
+    // Use a linear algebra library like math.js or similar for solving the system
     const math = require('mathjs');
 
     // Perform QR decomposition
@@ -526,18 +529,18 @@ function solveLeastSquares(A, B) {
 
 // Helper function to extract ellipsoid center from the least squares solution
 function extractEllipsoidCenter(p) {
-    // Extract the center of the ellipsoid from the least squares solution
+    // The last three parameters of the solution vector correspond to the ellipsoid center
     return [p[6], p[7], p[8]];
 }
 
 // Helper function to extract ellipsoid covariance from the least squares solution
 function extractEllipsoidCovariance(p) {
-    // Extract the covariance matrix from the least squares solution
-    return [
-        [p[0], p[3], p[4]],
-        [p[3], p[1], p[5]],
-        [p[4], p[5], p[2]]
-    ];
+    // p contains the upper triangle values of the covariance matrix
+    // The covariance matrix is symmetric, so we only store the upper triangle
+    const cov3Da = [p[0], p[3], p[4]];  // Elements: [a, b, c]
+    const cov3Db = [p[1], p[5], p[2]];  // Elements: [d, e, f]
+
+    return [cov3Da, cov3Db];
 }
 
 // Helper function to get a random unit vector (for sampling points on the ellipsoid)
