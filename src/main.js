@@ -338,7 +338,7 @@ function removeOpacity(x, y) {
             position: globalData.gaussians.positions.slice(3 * i, 3 * i + 3),
             cov3Da: globalData.gaussians.cov3Da.slice(3 * i, 3 * i + 3),
             cov3Db: globalData.gaussians.cov3Db.slice(3 * i, 3 * i + 3),
-            color: globalData.gaussians.colors.slice(4 * i, 4 * i + 3),
+            color: globalData.gaussians.colors.slice(3 * i, 3 * i + 3),
             opacity: globalData.gaussians.opacities[i]
         };
 
@@ -355,7 +355,7 @@ function removeOpacity(x, y) {
             globalData.gaussians.cov3Db.set(newGaussian.cov3Db, 3 * i);
 
             // Update colors and opacity
-            globalData.gaussians.colors.set(newGaussian.color, 4 * i);
+            globalData.gaussians.colors.set(newGaussian.color, 3 * i);
             globalData.gaussians.opacities[i] = newGaussian.opacity;
         } else {
             // If no new Gaussian is created, remove it by setting opacity to 0
@@ -388,7 +388,8 @@ function approximateGaussianOutside(gaussian, removeCenter, removeRadius) {
         if (fittedEllipsoid) {
             return {
                 position: fittedEllipsoid.center,
-                covariance: fittedEllipsoid.covariance,
+                cov3Da: fittedEllipsoid.cov3Da,
+                cov3Db: fittedEllipsoid.cov3Db,
                 color: gaussian.color,  // Keep original color
                 opacity: gaussian.opacity  // Keep original opacity
             };
@@ -512,19 +513,20 @@ function fitEllipsoidToPoints(points) {
     };
 }
 
-// Helper function to solve the least squares system
+// Solve the least squares system (math.js will be globally available via script tag)
 function solveLeastSquares(A, B) {
-    // Use a linear algebra library like math.js or similar for solving the system
-    const math = require('mathjs');
+    // Convert A and B to math.js matrix format
+    const A_matrix = math.matrix(A);
+    const B_matrix = math.matrix(B);
 
-    // Perform QR decomposition
-    const { Q, R } = math.qr(A);
-
-    // Solve for p using back substitution
-    const QtB = math.multiply(math.transpose(Q), B);
-    const p = math.lusolve(R, QtB);
-
-    return p;
+    // Compute the least squares solution p using the formula p = (A^T * A)^{-1} * (A^T * B)
+    const AT = math.transpose(A_matrix);
+    const ATA = math.multiply(AT, A_matrix);
+    const ATb = math.multiply(AT, B_matrix);
+    const ATA_inv = math.inv(ATA);
+    const p = math.multiply(ATA_inv, ATb);
+    
+    return p.valueOf(); // Convert result back to a regular array
 }
 
 // Helper function to extract ellipsoid center from the least squares solution
