@@ -310,7 +310,8 @@ function removeOpacity(x, y) {
     const hit = cam.raycast(x, y);  // Get the clicked position in 3D space
     const removeCenter = hit.pos;
     const removeRadius = settings.selectionSize;
-    const gaussiansWithinDistance = getGuassiansWithinDistance(removeCenter, removeRadius);
+    const intensityThreshold = 0.168;  // For 70% volume
+    const gaussiansWithinDistance = getGuassiansWithinDistance(removeCenter, removeRadius, intensityThreshold);
     console.log("hits", gaussiansWithinDistance);
     let numRemoved = 0;
     let numReplaced = 0;
@@ -365,14 +366,14 @@ function removeOpacity(x, y) {
 // ====================================================================================================
 // ====================================================================================================
 
-function getGuassiansWithinDistance(pos, threshold, intensityThreshold) {
+function getGuassiansWithinDistance(removeCenter, removeRadius, intensityThreshold) {
     const hits = [];
     for (let i = 0; i < gaussianCount; i++) {
         const gPos = globalData.gaussians.positions.slice(i * 3, i * 3 + 3);
-        const dist = vec3.distance(gPos, pos);
+        const dist = vec3.distance(gPos, removeCenter);
 
         // Check if the Gaussian center is within the removal region
-        if (dist < threshold) {
+        if (dist < removeRadius) {
             hits.push({
                 id: i,
             });
@@ -380,7 +381,7 @@ function getGuassiansWithinDistance(pos, threshold, intensityThreshold) {
     }
 
     // Also check for Gaussians intersecting with the boundary
-    const boundaryGaussians = getGaussiansOnBoundary(pos, threshold, intensityThreshold);
+    const boundaryGaussians = getGaussiansOnBoundary(removeCenter, removeRadius, intensityThreshold);
     hits.push(...boundaryGaussians);
 
     return hits;
@@ -396,14 +397,14 @@ function getGaussiansOnBoundary(removeCenter, removeRadius, intensityThreshold) 
         // Retrieve the covariance matrix (from cov3Da and cov3Db)
         const [a, b, c] = globalData.gaussians.cov3Da.slice(i * 3, i * 3 + 3);
         const [d, e, f] = globalData.gaussians.cov3Db.slice(i * 3, i * 3 + 3);
-        const Sigma = [
+        const gCov = [
             [a, b, c],
             [b, d, e],
             [c, e, f],
         ];
 
         // Test for intersection with the removal sphere
-        if (ellipsoidIntersectsSphere(Sigma, gPos, removeCenter, removeRadius, intensityThreshold)) {
+        if (ellipsoidIntersectionTest(gPos, gCov, intensityThreshold, removeCenter, removeRadius)) {
             boundaryHits.push({
                 id: i,
             });
@@ -413,63 +414,55 @@ function getGaussiansOnBoundary(removeCenter, removeRadius, intensityThreshold) 
     return boundaryHits;
 }
 
-// Helper function to perform the ellipsoid-sphere intersection test
-function ellipsoidIntersectsSphere(Sigma, gPos, removeCenter, removeRadius, intensityThreshold) {
-    // First, set up the eigenvalues (lambdas) and eigenvectors (Phi) for the ellipsoid
-    const SigmaInverse = math.inv(Sigma);
+// Function to test if an ellipsoid intersects with a sphere
+function ellipsoidIntersectionTest(gPos, gCov, intensityThreshold, removeCenter, removeDistance) {
+    // Convert input positions and covariance into math.js matrices
+    const mu_A = math.matrix(Array.from(gPos));
+    const mu_B = math.matrix(Array.from(removeCenter));
+    const Sigma_A = math.matrix(Array.from(gCov));
+
+    // Define Sigma_B (covariance matrix for the sphere)
+    const Sigma_B = math.multiply(removeDistance ** 2, math.identity(3)); // Sphere's radius squared
+
+    // Calculate scaling factor based on intensity threshold
     const scalingFactor = Math.sqrt(-2 * Math.log(intensityThreshold));
 
-    // Sphere covariance is removeRadius squared, times identity matrix
-    const SigmaSphere = [
-        [removeRadius * removeRadius, 0, 0],
-        [0, removeRadius * removeRadius, 0],
-        [0, 0, removeRadius * removeRadius]
-    ];
+    // Compute eigenvalues and eigenvectors
+    const { values: lambdas, vectors: Phi } = math.eigs(math.multiply(math.inv(Sigma_B), Sigma_A));
 
-    // Calculate lambdas and eigenvectors (Phi)
-    const eigResult = math.eigs(SigmaInverse, SigmaSphere);
-    const lambdas = eigResult.values;
-    const Phi = eigResult.vectors;
+    // Calculate the squared distance transformed by the eigenvectors
+    const v_squared = math.square(math.multiply(math.transpose(Phi), math.subtract(mu_A, mu_B)));
 
-    // Compute the Mahalanobis distance from the Gaussian center to the removal center
-    const diff = vec3.subtract([], gPos, removeCenter);
-    const v_squared = math.dotMultiply(math.transpose(Phi), diff).map(x => x * x);
+    // Minimize KFunction over the range [0, 1]
+    const result = minimizeScalar((s) => KFunction(s, lambdas, v_squared, scalingFactor), 0.0, 1.0);
 
-    // Minimize the K function to test for intersection
-    const result = minimizeScalar((s) => K_function(s, lambdas, v_squared, scalingFactor), [0.0, 0.5, 1.0]);
-
-    return result >= 0;  // Returns true if ellipsoid intersects the sphere
+    // Return whether the intersection occurs
+    return result >= 0;
 }
 
-// K function for minimizing the ellipsoid-sphere intersection test
-function K_function(s, lambdas, v_squared, tau) {
-    let sum = 0;
-    for (let i = 0; i < lambdas.length; i++) {
-        sum += v_squared[i] * ((s * (1 - s)) / (1 + s * (lambdas[i] - 1)));
-    }
-    return 1 - (1 / tau ** 2) * sum;
+// K function to evaluate during minimization
+function KFunction(s, lambdas, v_squared, tau) {
+    const term1 = math.sum(math.multiply(v_squared, math.multiply(s, math.subtract(1, s))));
+    const term2 = math.sum(math.dotMultiply(term1, math.dotDivide(1, math.add(1, math.multiply(s, math.subtract(lambdas, 1))))));
+    return 1 - (1 / (tau ** 2)) * term2;
 }
 
-// Perform the minimization of a scalar function (used in ellipsoid intersection test)
-function minimizeScalar(fn, bracket) {
-    const tol = 1e-5;
-    let [a, b, c] = bracket;
+// Minimize function using ternary search
+function minimizeScalar(func, left, right) {
+    const epsilon = 1e-9; // Precision for the search
 
-    while ((c - a) > tol) {
-        const u = a + (b - a) / 1.618;
-        const v = b + (c - b) / 1.618;
+    while (right - left > epsilon) {
+        const m1 = left + (right - left) / 3;
+        const m2 = right - (right - left) / 3;
 
-        const fu = fn(u);
-        const fv = fn(v);
-
-        if (fu < fv) {
-            c = v;
+        if (func(m1) < func(m2)) {
+            right = m2;
         } else {
-            a = u;
+            left = m1;
         }
     }
 
-    return (a + c) / 2;
+    return func((left + right) / 2);
 }
 
 // ====================================================================================================
@@ -554,10 +547,10 @@ function getPointOnEllipsoid(center, covariance, direction, intensityThreshold) 
     const scaledDirection = vec3.transformMat3([], unitDirection, covariance);
 
     // Compute the scaling factor for the boundary contour based on the intensity threshold
-    const scaleFactor = Math.sqrt(-2 * Math.log(intensityThreshold));  // Example: intensity threshold defines contour
+    const scalingFactor = Math.sqrt(-2 * Math.log(intensityThreshold));  // Example: intensity threshold defines contour
 
     // Scale the direction by the scale factor to find the point on the ellipsoid
-    const boundaryPoint = vec3.scaleAndAdd([], center, scaledDirection, scaleFactor);
+    const boundaryPoint = vec3.scaleAndAdd([], center, scaledDirection, scalingFactor);
 
     return boundaryPoint;
 }
