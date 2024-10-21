@@ -311,47 +311,19 @@ function removeOpacity(x, y) {
     const removeCenter = hit.pos;
     const removeRadius = settings.selectionSize;
     const intensityThreshold = 0.168;  // For 70% volume
-    const gaussiansWithinDistance = getGuassiansWithinDistance(removeCenter, removeRadius, intensityThreshold);
-    console.log("hits", gaussiansWithinDistance);
-    let numRemoved = 0;
-    let numReplaced = 0;
-    // For each hit, determine if the Gaussian is a boundary Gaussian and approximate the outside region
-    gaussiansWithinDistance.forEach((g) => {
-        const i = g.id;
 
-        const gaussian = {
-            position: globalData.gaussians.positions.slice(3 * i, 3 * i + 3),
-            cov3Da: globalData.gaussians.cov3Da.slice(3 * i, 3 * i + 3),
-            cov3Db: globalData.gaussians.cov3Db.slice(3 * i, 3 * i + 3),
-            color: globalData.gaussians.colors.slice(3 * i, 3 * i + 3),
-            opacity: globalData.gaussians.opacities[i]
-        };
+    // Step 1: Gather two lists (interior and potential boundary gaussians)
+    const { interiorGaussians, potentialBoundaryGaussians } = gatherGaussianLists(removeCenter, removeRadius);
 
-        // If the Gaussian is a boundary Gaussian, compute the new Gaussian outside the removal region
-        const newGaussian = approximateGaussianOutside(gaussian, removeCenter, removeRadius);
+    // Step 2: Filter potential boundary gaussians using the intersection test
+    const boundaryGaussians = filterBoundaryGaussians(potentialBoundaryGaussians, removeCenter, removeRadius, intensityThreshold);
 
-        // Replace the original Gaussian with the new one
-        if (newGaussian) {
-            // Update positions
-            globalData.gaussians.positions.set(newGaussian.position, 3 * i);
+    // Step 3: Process interior gaussians by setting opacity to zero
+    processInteriorGaussians(interiorGaussians);
 
-            // Update covariances
-            globalData.gaussians.cov3Da.set(newGaussian.cov3Da, 3 * i);
-            globalData.gaussians.cov3Db.set(newGaussian.cov3Db, 3 * i);
+    // Step 4: Process boundary gaussians by approximating the outside part
+    processBoundaryGaussians(boundaryGaussians, removeCenter, removeRadius);
 
-            // Update colors and opacity
-            globalData.gaussians.colors.set(newGaussian.color, 3 * i);
-            globalData.gaussians.opacities[i] = newGaussian.opacity;
-            numReplaced += 1;
-        } else {
-            // If no new Gaussian is created, remove it by setting opacity to 0
-            globalData.gaussians.opacities[i] = 0;
-            numRemoved += 1;
-        }
-    });
-    console.log("numReplaced / (numReplaced + numRemoved):", numReplaced / (numReplaced + numRemoved));
-    console.log("numReplaced + numRemoved:", numReplaced + numRemoved);
-    console.log("gaussiansWithinDistance.length:", gaussiansWithinDistance.length);
     // Update buffers and trigger render
     updateBuffer(positionBuffer, globalData.gaussians.positions);
     updateBuffer(colorBuffer, globalData.gaussians.colors);
@@ -366,77 +338,64 @@ function removeOpacity(x, y) {
 // ====================================================================================================
 // ====================================================================================================
 
-function getGuassiansWithinDistance(removeCenter, removeRadius, intensityThreshold) {
-    const hits = [];
+// Helper function for Step 1: Gather interior and potential boundary gaussians
+function gatherGaussianLists(removeCenter, removeRadius) {
+    const interiorGaussians = [];
+    const potentialBoundaryGaussians = [];
+
     for (let i = 0; i < gaussianCount; i++) {
         const gPos = globalData.gaussians.positions.slice(i * 3, i * 3 + 3);
         const dist = vec3.distance(gPos, removeCenter);
 
-        // Check if the Gaussian center is within the removal region
         if (dist < removeRadius) {
-            hits.push({
+            // Gaussian center is inside the removal radius
+            interiorGaussians.push({ id: i });
+        } else if (dist < 2 * removeRadius) {
+            // Gaussian center is potentially on the boundary
+            potentialBoundaryGaussians.push({
                 id: i,
+                position: gPos,
+                cov3Da: globalData.gaussians.cov3Da.slice(i * 3, i * 3 + 3),
+                cov3Db: globalData.gaussians.cov3Db.slice(i * 3, i * 3 + 3)
             });
         }
     }
 
-    // Also check for Gaussians intersecting with the boundary
-    const boundaryGaussians = getGaussiansOnBoundary(removeCenter, removeRadius, intensityThreshold);
-    hits.push(...boundaryGaussians);
-
-    return hits;
+    return { interiorGaussians, potentialBoundaryGaussians };
 }
 
-// Updated getGaussiansOnBoundary function
-function getGaussiansOnBoundary(removeCenter, removeRadius, intensityThreshold) {
-    const boundaryHits = [];
+// ====================================================================================================
+// ====================================================================================================
 
-    for (let i = 0; i < gaussianCount; i++) {
-        const gPos = globalData.gaussians.positions.slice(i * 3, i * 3 + 3);
+// Helper function for Step 2: Filter potential boundary gaussians
+function filterBoundaryGaussians(potentialBoundaryGaussians, removeCenter, removeRadius, intensityThreshold) {
+    return potentialBoundaryGaussians.filter(gaussian => {
+        const { position, cov3Da, cov3Db } = gaussian;
 
-        // Retrieve the covariance matrix (from cov3Da and cov3Db)
-        const [a, b, c] = globalData.gaussians.cov3Da.slice(i * 3, i * 3 + 3);
-        const [d, e, f] = globalData.gaussians.cov3Db.slice(i * 3, i * 3 + 3);
         const gCov = [
-            [a, b, c],
-            [b, d, e],
-            [c, e, f],
+            [cov3Da[0], cov3Da[1], cov3Da[2]],
+            [cov3Da[1], cov3Db[0], cov3Db[1]],
+            [cov3Da[2], cov3Db[1], cov3Db[2]]
         ];
 
-        // Test for intersection with the removal sphere
-        if (ellipsoidIntersectionTest(gPos, gCov, intensityThreshold, removeCenter, removeRadius)) {
-            boundaryHits.push({
-                id: i,
-            });
-        }
-    }
-
-    return boundaryHits;
+        return ellipsoidIntersectionTest(position, gCov, intensityThreshold, removeCenter, removeRadius);
+    });
 }
 
-// Function to test if an ellipsoid intersects with a sphere
+// Ellipsoid intersection test function (unchanged from previous code)
 function ellipsoidIntersectionTest(gPos, gCov, intensityThreshold, removeCenter, removeDistance) {
-    // Convert input positions and covariance into math.js matrices
-    const mu_A = math.matrix(Array.from(gPos));
-    const mu_B = math.matrix(Array.from(removeCenter));
-    const Sigma_A = math.matrix(Array.from(gCov));
+    const mu_A = math.matrix(gPos);
+    const mu_B = math.matrix(removeCenter);
+    const Sigma_A = math.matrix(gCov);
+    const Sigma_B = math.multiply(removeDistance ** 2, math.identity(3));  // Sphere's covariance
 
-    // Define Sigma_B (covariance matrix for the sphere)
-    const Sigma_B = math.multiply(removeDistance ** 2, math.identity(3)); // Sphere's radius squared
-
-    // Calculate scaling factor based on intensity threshold
     const scalingFactor = Math.sqrt(-2 * Math.log(intensityThreshold));
 
-    // Compute eigenvalues and eigenvectors
     const { values: lambdas, vectors: Phi } = math.eigs(math.multiply(math.inv(Sigma_B), Sigma_A));
-
-    // Calculate the squared distance transformed by the eigenvectors
     const v_squared = math.square(math.multiply(math.transpose(Phi), math.subtract(mu_A, mu_B)));
 
-    // Minimize KFunction over the range [0, 1]
     const result = minimizeScalar((s) => KFunction(s, lambdas, v_squared, scalingFactor), 0.0, 1.0);
 
-    // Return whether the intersection occurs
     return result >= 0;
 }
 
@@ -468,6 +427,40 @@ function minimizeScalar(func, left, right) {
 // ====================================================================================================
 // ====================================================================================================
 
+// Helper function for Step 3: Process interior gaussians by setting opacity to zero
+function processInteriorGaussians(interiorGaussians) {
+    interiorGaussians.forEach(g => {
+        globalData.gaussians.opacities[g.id] = 0;
+    });
+}
+
+// Helper function for Step 4: Process boundary gaussians by approximating the outside part
+function processBoundaryGaussians(boundaryGaussians, removeCenter, removeRadius) {
+    boundaryGaussians.forEach(gaussian => {
+        const i = gaussian.id;
+        const newGaussian = approximateGaussianOutside(gaussian, removeCenter, removeRadius);
+
+        if (newGaussian) {
+            // Update positions
+            globalData.gaussians.positions.set(newGaussian.position, 3 * i);
+
+            // Update covariances
+            globalData.gaussians.cov3Da.set(newGaussian.cov3Da, 3 * i);
+            globalData.gaussians.cov3Db.set(newGaussian.cov3Db, 3 * i);
+
+            // Update colors and opacity
+            globalData.gaussians.colors.set(newGaussian.color, 3 * i);
+            globalData.gaussians.opacities[i] = newGaussian.opacity;
+        } else {
+            // If no new Gaussian is created, remove it by setting opacity to 0
+            globalData.gaussians.opacities[i] = 0;
+        }
+    });
+}
+
+// ====================================================================================================
+// ====================================================================================================
+
 // Helper function to approximate the Gaussian outside the removal region
 function approximateGaussianOutside(gaussian, removeCenter, removeRadius) {
     const { position: mu, cov3Da: cov3Da, cov3Db: cov3Db, color: color, opacity: opacity } = gaussian;
@@ -479,7 +472,8 @@ function approximateGaussianOutside(gaussian, removeCenter, removeRadius) {
         const boundaryPoints = sampleBoundaryPoints(gaussian, removeCenter, removeRadius, 10);  // Sample 10 points
 
         // Step 3: Fit an ellipsoid to the sampled points using least squares
-        const fittedEllipsoid = fitEllipsoidToPoints(boundaryPoints);
+        const intensityThreshold = 0.168;  // For 70% volume
+        const fittedEllipsoid = fitEllipsoidToPoints(boundaryPoints, intensityThreshold);
 
         // Step 4: Create a new Gaussian with the ellipsoid parameters (covariance, center)
         if (fittedEllipsoid) {
