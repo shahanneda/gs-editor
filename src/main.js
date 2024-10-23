@@ -310,15 +310,16 @@ function removeOpacity(x, y) {
     const hit = cam.raycast(x, y);  // Get the clicked position in 3D space
     const removeCenter = hit.pos;
     const removeRadius = settings.selectionSize;
-    const intensityThreshold = 0.168;  // For 70% volume
+    // const intensityThreshold = 0.168;  // For 70% volume
+    const intensityThreshold = 0.4;
 
     // Step 1: Gather two lists (interior and potential boundary gaussians)
     console.log("Step 1: Gather two lists (interior and potential boundary gaussians)");
-    const { interiorGaussians, potentialBoundaryGaussians } = gatherGaussianLists(removeCenter, removeRadius);
+    const { interiorGaussians, potentialBoundaryGaussians } = gatherGaussianListsCube(removeCenter, removeRadius);
 
     // Step 2: Filter potential boundary gaussians using the intersection test
     console.log("Step 2: Filter potential boundary gaussians using the intersection test");
-    const boundaryGaussians = filterBoundaryGaussians(potentialBoundaryGaussians, removeCenter, removeRadius, intensityThreshold);
+    const boundaryGaussians = filterBoundaryGaussians(potentialBoundaryGaussians, intensityThreshold, removeCenter, removeRadius);
 
     // Step 3: Process interior gaussians by setting opacity to zero
     console.log("Step 3: Process interior gaussians by setting opacity to zero");
@@ -342,26 +343,72 @@ function removeOpacity(x, y) {
 // ====================================================================================================
 // ====================================================================================================
 
-// Helper function for Step 1: Gather interior and potential boundary gaussians
-function gatherGaussianLists(removeCenter, removeRadius) {
+// // Helper function for Step 1: Gather interior and potential boundary gaussians
+// function gatherGaussianListsBall(removeCenter, removeRadius) {
+//     const interiorGaussians = [];
+//     const potentialBoundaryGaussians = [];
+
+//     for (let i = 0; i < gaussianCount; i++) {
+//         const gPos = globalData.gaussians.positions.slice(i * 3, i * 3 + 3);
+//         const dist = vec3.distance(gPos, removeCenter);
+
+//         if (dist < removeRadius) {
+//             // Gaussian center is inside the removal radius
+//             interiorGaussians.push({ id: i });
+//         } else if (dist < 2 * removeRadius) {
+//             // Gaussian center is potentially on the boundary
+//             potentialBoundaryGaussians.push({
+//                 id: i,
+//                 position: gPos,
+//                 cov3Da: globalData.gaussians.cov3Da.slice(i * 3, i * 3 + 3),
+//                 cov3Db: globalData.gaussians.cov3Db.slice(i * 3, i * 3 + 3),
+//                 color: globalData.gaussians.colors.slice(i * 3, i * 3 + 3),
+//                 opacity: globalData.gaussians.opacities[i]
+//             });
+//         }
+//     }
+
+//     return { interiorGaussians, potentialBoundaryGaussians };
+// }
+
+function gatherGaussianListsCube(removeCenter, removeRadius) {
     const interiorGaussians = [];
     const potentialBoundaryGaussians = [];
 
+    // Cube extends along the Z-axis by 2 * removeRadius, and horizontally centered at removeCenter
+    const cubeMin = [
+        removeCenter[0] - removeRadius,  // X min
+        removeCenter[1] - removeRadius,  // Y min
+        removeCenter[2],                 // Z min (bottom face, centered at removeCenter)
+    ];
+
+    const cubeMax = [
+        removeCenter[0] + removeRadius,  // X max
+        removeCenter[1] + removeRadius,  // Y max
+        removeCenter[2] + 2 * removeRadius,  // Z max (top face of the cube)
+    ];
+
     for (let i = 0; i < gaussianCount; i++) {
         const gPos = globalData.gaussians.positions.slice(i * 3, i * 3 + 3);
-        const dist = vec3.distance(gPos, removeCenter);
 
-        if (dist < removeRadius) {
-            // Gaussian center is inside the removal radius
+        // Check if the Gaussian center is inside the cube (interior)
+        const insideX = gPos[0] >= cubeMin[0] && gPos[0] <= cubeMax[0];
+        const insideY = gPos[1] >= cubeMin[1] && gPos[1] <= cubeMax[1];
+        const insideZ = gPos[2] >= cubeMin[2] && gPos[2] <= cubeMax[2];
+
+        if (insideX && insideY && insideZ) {
+            // Gaussian center is inside the removal region (interior)
             interiorGaussians.push({ id: i });
-        } else if (dist < 2 * removeRadius) {
-            // Gaussian center is potentially on the boundary
-            potentialBoundaryGaussians.push({
-                id: i,
-                position: gPos,
-                cov3Da: globalData.gaussians.cov3Da.slice(i * 3, i * 3 + 3),
-                cov3Db: globalData.gaussians.cov3Db.slice(i * 3, i * 3 + 3)
-            });
+        } else {
+            // Check if the Gaussian is near the boundary (within a shell around the cube)
+            const nearBoundaryX = gPos[0] >= (cubeMin[0] - removeRadius) && gPos[0] <= (cubeMax[0] + removeRadius);
+            const nearBoundaryY = gPos[1] >= (cubeMin[1] - removeRadius) && gPos[1] <= (cubeMax[1] + removeRadius);
+            const nearBoundaryZ = gPos[2] >= (cubeMin[2] - removeRadius) && gPos[2] <= (cubeMax[2] + removeRadius);
+
+            if (nearBoundaryX && nearBoundaryY && nearBoundaryZ) {
+                // Gaussian center is potentially on the boundary
+                potentialBoundaryGaussians.push({ id: i });
+            }
         }
     }
 
@@ -372,7 +419,7 @@ function gatherGaussianLists(removeCenter, removeRadius) {
 // ====================================================================================================
 
 // Helper function for Step 2: Filter potential boundary gaussians
-function filterBoundaryGaussians(potentialBoundaryGaussians, removeCenter, removeRadius, intensityThreshold) {
+function filterBoundaryGaussians(potentialBoundaryGaussians, intensityThreshold, removeCenter, removeRadius) {
     const boundaryGaussians = [];
 
     potentialBoundaryGaussians.forEach(gaussian => {
@@ -389,7 +436,7 @@ function filterBoundaryGaussians(potentialBoundaryGaussians, removeCenter, remov
         ];
 
         // Call the ellipsoid intersection test with the updated arguments
-        if (ellipsoidSphereIntersectionTest(gPos, gCov, intensityThreshold, removeCenter, removeRadius)) {
+        if (ellipsoidCubeIntersectionTest(gPos, gCov, intensityThreshold, removeCenter, removeRadius)) {
             boundaryGaussians.push(gaussian);
         }
     });
@@ -397,55 +444,108 @@ function filterBoundaryGaussians(potentialBoundaryGaussians, removeCenter, remov
     return boundaryGaussians;
 }
 
-function ellipsoidSphereIntersectionTest(gPos, gCov, intensityThreshold, removeCenter, removeRadius) {
-    // Convert input positions and covariance matrices into math.js matrices
-    const mu_A = math.matrix(Array.from(gPos));          // Gaussian's position
-    const mu_B = math.matrix(Array.from(removeCenter));  // Removal sphere's center
-    const Sigma_A = math.matrix(Array.from(gCov));       // Gaussian's covariance
+function ellipsoidCubeIntersectionTest(gPos, gCov, intensityThreshold, removeCenter, removeRadius) {
+    // Calculate the scaling factor
+    const scalingFactor = Math.sqrt((2 * Math.PI) ** 3 * Math.abs(math.det(gCov))) * intensityThreshold;
 
-    // Define Sigma_B (covariance matrix for the sphere)
-    const Sigma_B = math.multiply(removeRadius ** 2, math.identity(3));  // Sphere's covariance matrix
+    // Calculate the effective contour level
+    const k = -2 * Math.log(scalingFactor);
 
-    // Calculate scaling factor based on intensity threshold
-    const scalingFactor = Math.sqrt(-2 * Math.log(intensityThreshold));
+    // Calculate semi-axis lengths for the ellipsoid
+    const r_x = Math.sqrt(k * gCov[0][0]);
+    const r_y = Math.sqrt(k * gCov[1][1]);
+    const r_z = Math.sqrt(k * gCov[2][2]);
 
-    // Compute eigenvalues and eigenvectors
-    const { values: lambdas, vectors: Phi } = math.eigs(math.multiply(math.inv(Sigma_B), Sigma_A));
+    // Define the bounding box for the ellipsoid
+    const ellipsoidBounds = {
+        min: [
+            gPos[0] - r_x,
+            gPos[1] - r_y,
+            gPos[2] - r_z
+        ],
+        max: [
+            gPos[0] + r_x,
+            gPos[1] + r_y,
+            gPos[2] + r_z
+        ]
+    };
 
-    // Calculate the squared distance transformed by the eigenvectors
-    const v_squared = math.square(math.multiply(math.transpose(Phi), math.subtract(mu_A, mu_B)));
+    // Calculate the bounds of the cube
+    const cubeBounds = {
+        min: [
+            removeCenter[0] - removeRadius,
+            removeCenter[1] - removeRadius,
+            removeCenter[2], // Bottom face
+        ],
+        max: [
+            removeCenter[0] + removeRadius,
+            removeCenter[1] + removeRadius,
+            removeCenter[2] + 2 * removeRadius, // Height of the cube
+        ]
+    };
 
-    // Minimize KFunction over the range [0, 1]
-    const result = minimizeScalar((s) => KFunction(s, lambdas, v_squared, scalingFactor), 0.0, 1.0);
+    // Check for intersection between the ellipsoid and the cube
+    const intersects = (
+        ellipsoidBounds.min[0] <= cubeBounds.max[0] && ellipsoidBounds.max[0] >= cubeBounds.min[0] &&
+        ellipsoidBounds.min[1] <= cubeBounds.max[1] && ellipsoidBounds.max[1] >= cubeBounds.min[1] &&
+        ellipsoidBounds.min[2] <= cubeBounds.max[2] && ellipsoidBounds.max[2] >= cubeBounds.min[2]
+    );
 
-    // Return whether the intersection occurs
-    return result >= 0;
+    return intersects;
 }
 
-// K function to evaluate during minimization
-function KFunction(s, lambdas, v_squared, tau) {
-    const term1 = math.sum(math.multiply(v_squared, math.multiply(s, math.subtract(1, s))));
-    const term2 = math.sum(math.dotMultiply(term1, math.dotDivide(1, math.add(1, math.multiply(s, math.subtract(lambdas, 1))))));
-    return 1 - (1 / (tau ** 2)) * term2;
-}
+// ====================================================================================================
+// ====================================================================================================
 
-// Minimize function using ternary search
-function minimizeScalar(func, left, right) {
-    const epsilon = 1e-9; // Precision for the search
+// function ellipsoidSphereIntersectionTest(gPos, gCov, intensityThreshold, removeCenter, removeRadius) {
+//     // Convert input positions and covariance matrices into math.js matrices
+//     const mu_A = math.matrix(Array.from(gPos));          // Gaussian's position
+//     const mu_B = math.matrix(Array.from(removeCenter));  // Removal sphere's center
+//     const Sigma_A = math.matrix(Array.from(gCov));       // Gaussian's covariance
 
-    while (right - left > epsilon) {
-        const m1 = left + (right - left) / 3;
-        const m2 = right - (right - left) / 3;
+//     // Define Sigma_B (covariance matrix for the sphere)
+//     const Sigma_B = math.multiply(removeRadius ** 2, math.identity(3));  // Sphere's covariance matrix
 
-        if (func(m1) < func(m2)) {
-            right = m2;
-        } else {
-            left = m1;
-        }
-    }
+//     // Calculate scaling factor based on intensity threshold
+//     const scalingFactor = Math.sqrt(-2 * Math.log(intensityThreshold));
 
-    return func((left + right) / 2);
-}
+//     // Compute eigenvalues and eigenvectors
+//     const { values: lambdas, vectors: Phi } = math.eigs(math.multiply(math.inv(Sigma_B), Sigma_A));
+
+//     // Calculate the squared distance transformed by the eigenvectors
+//     const v_squared = math.square(math.multiply(math.transpose(Phi), math.subtract(mu_A, mu_B)));
+
+//     // Minimize KFunction over the range [0, 1]
+//     const result = minimizeScalar((s) => KFunction(s, lambdas, v_squared, scalingFactor), 0.0, 1.0);
+
+//     // Return whether the intersection occurs
+//     return result >= 0;
+// }
+
+// // K function to evaluate during minimization
+// function KFunction(s, lambdas, v_squared, tau) {
+//     const term1 = math.sum(math.multiply(v_squared, math.multiply(s, math.subtract(1, s))));
+//     const term2 = math.sum(math.dotMultiply(term1, math.dotDivide(1, math.add(1, math.multiply(s, math.subtract(lambdas, 1))))));
+//     return 1 - (1 / (tau ** 2)) * term2;
+// }
+
+// // Minimize function using ternary search
+// function minimizeScalar(func, left, right) {
+//     const epsilon = 1e-9; // Precision for the search
+
+//     while (right - left > epsilon) {
+//         const m1 = left + (right - left) / 3;
+//         const m2 = right - (right - left) / 3;
+
+//         if (func(m1) < func(m2)) {
+//             right = m2;
+//         } else {
+//             left = m1;
+//         }
+//     }
+
+//     return func((left + right) / 2);
+// }
 
 // ====================================================================================================
 // ====================================================================================================
@@ -457,66 +557,244 @@ function processInteriorGaussians(interiorGaussians) {
     });
 }
 
+function concatTypedArrays(arr1, arr2) {
+    const newArr = new arr1.constructor(arr1.length + arr2.length); // Creates new typed array
+    newArr.set(arr1); // Copies arr1 into newArr
+    newArr.set(arr2, arr1.length); // Copies arr2 after arr1
+    return newArr;
+}
+
 // Helper function for Step 4: Process boundary gaussians by approximating the outside part
 function processBoundaryGaussians(boundaryGaussians, intensityThreshold, removeCenter, removeRadius) {
-    boundaryGaussians.forEach(gaussian => {
-        const i = gaussian.id;
-        const newGaussian = approximateGaussianOutside(gaussian, intensityThreshold, removeCenter, removeRadius);
+    boundaryGaussians.forEach(gaussian_idx => {
+        const i = gaussian_idx.id;
+        // Make the old gaussian invisible
+        globalData.gaussians.opacities[i] = 0;
+        const newGaussians = approximateGaussianOutsideCube(gaussian_idx, intensityThreshold, removeCenter, removeRadius);
 
-        if (newGaussian) {
-            // Update positions
-            globalData.gaussians.positions.set(newGaussian.position, 3 * i);
-
-            // Update covariances
-            globalData.gaussians.cov3Da.set(newGaussian.cov3Da, 3 * i);
-            globalData.gaussians.cov3Db.set(newGaussian.cov3Db, 3 * i);
-
-            // Update colors and opacity
-            globalData.gaussians.colors.set(newGaussian.color, 3 * i);
-            globalData.gaussians.opacities[i] = newGaussian.opacity;
-        } else {
-            // If no new Gaussian is created, remove it by setting opacity to 0
-            globalData.gaussians.opacities[i] = 0;
-        }
+        newGaussians.forEach(newGaussian => {
+            if (newGaussian) {
+                // Concatenate new data for positions, cov3Da, cov3Db, and colors
+                globalData.gaussians.positions = concatTypedArrays(globalData.gaussians.positions, new Float32Array(newGaussian.position));
+                globalData.gaussians.cov3Da = concatTypedArrays(globalData.gaussians.cov3Da, new Float32Array(newGaussian.cov3Da));
+                globalData.gaussians.cov3Db = concatTypedArrays(globalData.gaussians.cov3Db, new Float32Array(newGaussian.cov3Db));
+                globalData.gaussians.colors = concatTypedArrays(globalData.gaussians.colors, new Float32Array(newGaussian.color));
+                globalData.gaussians.opacities = concatTypedArrays(globalData.gaussians.opacities, new Float32Array([newGaussian.opacity]));
+            }
+        });
     });
 }
 
 // ====================================================================================================
+// method 2: approximate the remove region with half-space
+// ====================================================================================================
+
+function approximateGaussianOutsideCube(gaussian_idx, intensityThreshold, removeCenter, removeRadius) {
+    const resultEllipsoids = [];
+
+    // Define the six planes of the cube
+    const planes = [
+        {
+            normal: [0, 0, -1], point: [
+                removeCenter[0],
+                removeCenter[1],
+                removeCenter[2]]
+        }, // Bottom face
+        {
+            normal: [0, 0, 1], point: [
+                removeCenter[0],
+                removeCenter[1],
+                removeCenter[2] + removeRadius * 2]
+        }, // Top face
+        {
+            normal: [-1, 0, 0], point: [
+                removeCenter[0] - removeRadius,
+                removeCenter[1],
+                removeCenter[2] + removeRadius]
+        }, // Left face
+        {
+            normal: [1, 0, 0], point: [
+                removeCenter[0] + removeRadius,
+                removeCenter[1],
+                removeCenter[2] + removeRadius]
+        }, // Right face
+        {
+            normal: [0, -1, 0], point: [
+                removeCenter[0],
+                removeCenter[1] - removeRadius,
+                removeCenter[2] + removeRadius]
+        }, // Front face
+        {
+            normal: [0, 1, 0], point: [
+                removeCenter[0],
+                removeCenter[1] + removeRadius,
+                removeCenter[2] + removeRadius]
+        }  // Back face
+    ];
+
+    // Loop through each plane and call the helper function
+    for (const { normal, point } of planes) {
+        const smallerEllipsoids = approximateGaussianOutsideHalfSpace(gaussian_idx, intensityThreshold, point, normal);
+        resultEllipsoids.push(...smallerEllipsoids);
+    }
+
+    return resultEllipsoids;
+}
+
+function approximateGaussianOutsideHalfSpace(gaussian_idx, intensityThreshold, planeCenter, planeNormal) {
+    // read data
+    const i = gaussian_idx.id;
+    const gPos = Array.from(globalData.gaussians.positions.slice(i * 3, i * 3 + 3));
+    const [a, b, c] = globalData.gaussians.cov3Da.slice(i * 3, i * 3 + 3);
+    const [d, e, f] = globalData.gaussians.cov3Db.slice(i * 3, i * 3 + 3);
+    const gCov = math.matrix([
+        [a, b, c],
+        [b, d, e],
+        [c, e, f],
+    ]);
+    const color = globalData.gaussians.colors.slice(i * 3, i * 3 + 3);
+    const opacity = globalData.gaussians.opacities[i];
+
+    // Eigen decomposition of Sigma to get U and Lambda
+    const { values: eigenvalues, vectors: eigenvectors } = math.eigs(gCov);
+
+    // Construct the affine transformation matrix A = U^T * Lambda^(-1/2) * U
+    const LambdaInvSqrt = math.diag(eigenvalues.map(v => Math.sqrt(1 / v))); // Lambda^(-1/2)
+    const U = eigenvectors;
+    const A = math.multiply(math.multiply(math.transpose(U), LambdaInvSqrt), U); // A = U^T * Lambda^(-1/2) * U
+
+    // Apply transformations
+    const transformedPosition = math.multiply(A, gPos); // A * mu
+    const transformedPlanePoint = math.multiply(A, planeCenter); // Transform removeCenter
+    let transformedPlaneNormal = math.multiply(math.inv(A), planeNormal);
+    transformedPlaneNormal = math.divide(transformedPlaneNormal, math.norm(transformedPlaneNormal)); // Normalize the normal
+
+    // Calculate the determinant of the covariance matrix to determine scaling factor
+    const scalingFactor = Math.sqrt((2 * Math.PI) ** 3 * Math.abs(math.det(gCov))) * intensityThreshold;
+    const C = -2 * Math.log(scalingFactor);
+
+    // Define the radius R of the transformed Gaussian (which is now a ball)
+    const R = Math.sqrt(C); // Effective radius based on contour level
+
+    // Use the utility function to get the smaller balls
+    const ball = {
+        center: transformedPosition,
+        radius: R
+    }
+    const smallerBalls = approximateCutBall(ball, transformedPlanePoint, transformedPlaneNormal);
+
+    // Transform the smaller balls back to the original space
+    const resultEllipsoids = smallerBalls.map(ball => {
+        const newPos = math.multiply(math.inv(A), ball.center); // Transform back
+        const newCov = math.multiply(gCov, ball.radius ** 2 / C)._data;
+        const newCov3Da = [newCov[0][0], newCov[0][1], newCov[0][2]]; // Upper triangular part, row 0
+        const newCov3Db = [newCov[1][1], newCov[1][2], newCov[2][2]]; // Upper triangular part, row 1
+        return {
+            position: newPos,
+            cov3Da: newCov3Da,
+            cov3Db: newCov3Db,
+            color: color,
+            opacity: opacity,
+        };
+    });
+
+    return resultEllipsoids;
+}
+
+function approximateCutBall(originalBall, planePoint, planeNormal) {
+    // Calculate the distance h from the ball center to the plane
+    const h = math.dot(math.subtract(originalBall.center, planePoint), planeNormal);
+
+    // Check if the ball intersects the plane
+    if (h >= originalBall.radius) {
+        return [originalBall]; // Ball is entirely above the plane
+    }
+
+    // To find an offset vector parallel to the plane, we can pick one vector in the plane
+    let planeTangent = math.cross(planeNormal, [1, 0, 0]); // First tangent vector
+
+    // Ensure we have a valid tangent, recalculate if the first cross product resulted in a zero vector
+    if (math.norm(planeTangent) === 0) {
+        planeTangent = math.cross(planeNormal, [0, 1, 0]);
+    }
+
+    let r, centerPoint;
+
+    if (h >= originalBall.radius / 2) {
+        r = originalBall.radius / 2;
+        centerPoint = originalBall.center;
+    }
+    else {
+        // Solve for r using the quadratic equation: r^2 + (2R - 2h)r + (h^2 - R^2) = 0
+        const a = 1; // Coefficient of r^2
+        const b = 2 * originalBall.radius - 2 * h; // Coefficient of r
+        const c = h * h - originalBall.radius * originalBall.radius; // Constant term
+        // Use the quadratic formula: r = (-b ± sqrt(b^2 - 4ac)) / 2a
+        const discriminant = b * b - 4 * a * c;
+        const r1 = (-b + Math.sqrt(discriminant)) / (2 * a);
+        const r2 = (-b - Math.sqrt(discriminant)) / (2 * a);
+        r = Math.max(r1, r2); // Choose the positive radius
+
+        // Calculate the center point on the plane
+        centerPoint = math.add(planePoint, math.multiply(planeNormal, r));
+    }
+
+    const offset = math.multiply(planeTangent, r); // Offset in the direction of the tangent
+
+    // Create two smaller balls centered symmetrically about the centerPoint
+    const smallerBalls = [
+        {
+            center: math.add(centerPoint, offset),
+            radius: r
+        },  // First smaller ball
+        {
+            center: math.subtract(centerPoint, offset),
+            radius: r
+        } // Second smaller ball
+    ];
+
+    return smallerBalls;
+}
+
+// ====================================================================================================
+// method 1: LS fitting to points sampled on the surface of the out side region
 // ====================================================================================================
 
 // Helper function to approximate the Gaussian outside the removal region
-function approximateGaussianOutside(gaussian, intensityThreshold, removeCenter, removeRadius) {
+// function approximateGaussianOutside(gaussian, intensityThreshold, removeCenter, removeRadius) {
 
-    // Step 1: Check if the Gaussian center is outside the removal region
-    const distToRemove = vec3.distance(gaussian.position, removeCenter);
-    if (distToRemove >= removeRadius) {
-        // Step 2: If the center is outside, sample points on the boundary of the intersection
-        const boundaryPoints = sampleBoundaryPoints(gaussian, removeCenter, removeRadius, 10);  // Sample 10 points
+//     // Step 1: Check if the Gaussian center is outside the removal region
+//     const distToRemove = vec3.distance(gaussian.position, removeCenter);
+//     if (distToRemove >= removeRadius) {
+//         // Step 2: If the center is outside, sample points on the boundary of the intersection
+//         console.log("Calling sampleBoundaryPoints...");
+//         const boundaryPoints = sampleBoundaryPoints(gaussian, intensityThreshold, removeCenter, removeRadius, 10);  // Sample 10 points
 
-        // Step 3: Fit an ellipsoid to the sampled points using least squares
-        const fittedEllipsoid = fitEllipsoidToPoints(boundaryPoints, intensityThreshold);
+//         // Step 3: Fit an ellipsoid to the sampled points using least squares
+//         console.log("Calling fitEllipsoidToPoints...");
+//         const fittedEllipsoid = fitEllipsoidToPoints(boundaryPoints, intensityThreshold);
 
-        // Step 4: Create a new Gaussian with the ellipsoid parameters (covariance, center)
-        if (fittedEllipsoid) {
-            return {
-                position: fittedEllipsoid.center,
-                cov3Da: fittedEllipsoid.cov3Da,
-                cov3Db: fittedEllipsoid.cov3Db,
-                color: gaussian.color,  // Keep original color
-                opacity: gaussian.opacity  // Keep original opacity
-            };
-        }
-    }
+//         // Step 4: Create a new Gaussian with the ellipsoid parameters (covariance, center)
+//         if (fittedEllipsoid) {
+//             return {
+//                 position: fittedEllipsoid.center,
+//                 cov3Da: fittedEllipsoid.cov3Da,
+//                 cov3Db: fittedEllipsoid.cov3Db,
+//                 color: gaussian.color,  // Keep original color
+//                 opacity: gaussian.opacity  // Keep original opacity
+//             };
+//         }
+//     }
 
-    // Return null if no approximation is needed
-    return null;
-}
+//     // Return null if no approximation is needed
+//     return null;
+// }
 
 // ====================================================================================================
 // ====================================================================================================
 
 // Helper function to sample boundary points between the Gaussian and removal region
-function sampleBoundaryPoints(gaussian, removeCenter, removeRadius, numPoints) {
+function sampleBoundaryPoints(gaussian, intensityThreshold, removeCenter, removeRadius, numPoints) {
     const points = [];
     const [a, b, c] = gaussian.cov3Da;
     const [d, e, f] = gaussian.cov3Db;
@@ -525,7 +803,6 @@ function sampleBoundaryPoints(gaussian, removeCenter, removeRadius, numPoints) {
         [b, d, e],
         [c, e, f],
     ];
-    const intensityThreshold = 0.168;  // For 70% volume
     for (let i = 0; i < numPoints; i++) {
         // Sample random directions on the Gaussian ellipsoid
         const randomDirection = getRandomUnitVector();
@@ -538,7 +815,7 @@ function sampleBoundaryPoints(gaussian, removeCenter, removeRadius, numPoints) {
         if (distToCenter > removeRadius) {
             points.push(pointOnGaussian);
         }
-        else{
+        else {
             // Find the point where the ray from Gaussian center intersects with the remove region's boundary
             const pointOnBoundary = getPointOnBoundary(gaussian.position, randomDirection, removeCenter, removeRadius);
             points.push(pointOnBoundary);
@@ -648,7 +925,7 @@ function fitEllipsoidToPoints(points, intensityThreshold) {
 
     // Extract ellipsoid parameters (center, covariance) from the solution vector p
     const ellipsoidCenter = extractEllipsoidCenter(p);
-    
+
     // Construct the covariance matrix as upper triangle (cov3Da and cov3Db)
     const [cov3Da, cov3Db] = extractEllipsoidCovariance(p);
 
@@ -671,7 +948,7 @@ function solveLeastSquares(A, B) {
     const ATb = math.multiply(AT, B_matrix);
     const ATA_inv = math.inv(ATA);
     const p = math.multiply(ATA_inv, ATb);
-    
+
     return p.valueOf(); // Convert result back to a regular array
 }
 
@@ -692,7 +969,7 @@ function extractEllipsoidCovariance(p) {
     const sigma_xx = 1 / p[0];
     const sigma_yy = 1 / p[1];
     const sigma_zz = 1 / p[2];
-    
+
     // Off-diagonal terms (covariance terms, normalized)
     const sigma_xy = p[3] / (p[0] * p[1]);  // D / (A * B)
     const sigma_xz = p[4] / (p[0] * p[2]);  // E / (A * C)
