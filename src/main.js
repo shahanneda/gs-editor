@@ -118,10 +118,33 @@ const defaultCameraParameters = {
   },
 };
 
+function checkGLError(gl, operation) {
+  const error = gl.getError();
+  if (error !== gl.NO_ERROR) {
+      let errorName;
+      switch (error) {
+          case gl.INVALID_ENUM: errorName = "INVALID_ENUM"; break;
+          case gl.INVALID_VALUE: errorName = "INVALID_VALUE"; break;
+          case gl.INVALID_OPERATION: errorName = "INVALID_OPERATION"; break;
+          case gl.INVALID_FRAMEBUFFER_OPERATION: errorName = "INVALID_FRAMEBUFFER_OPERATION"; break;
+          case gl.OUT_OF_MEMORY: errorName = "OUT_OF_MEMORY"; break;
+          case gl.CONTEXT_LOST_WEBGL: errorName = "CONTEXT_LOST_WEBGL"; break;
+          default: errorName = "UNKNOWN_ERROR"; break;
+      }
+      console.error(`WebGL error after ${operation}: ${errorName} (${error})`);
+      return false;
+  }
+  return true;
+}
+
+
 const updateBuffer = (buffer, data) => {
   // console.log("setting buffer", buffer, "data", data);
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  checkGLError(gl, "binding vertex buffer");
+
   gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+  checkGLError(gl, "buffering vertex data");
 };
 
 const isLocalHost =
@@ -168,11 +191,20 @@ async function main() {
       cam.disableMovement = false;
     }
 
+    console.log("updating color data buffer");
     updateBuffer(buffers.color, data.colors);
+    console.log("updating center data buffer");
     updateBuffer(buffers.center, data.positions);
+    console.log("updating opacity data buffer");
     updateBuffer(buffers.opacity, data.opacities);
+    console.log("updating covA data buffer");
     updateBuffer(buffers.covA, data.cov3Da);
+    console.log("updating covB data buffer");
     updateBuffer(buffers.covB, data.cov3Db);
+    console.log("updating isEraser data buffer");
+    console.log("data.isEraser", data.isEraser);
+    console.log("buffers.isEraser", buffers.isEraser);
+    updateBuffer(buffers.isEraser, data.isEraser);
 
     // Needed for the gizmo renderer
     positionBuffer = buffers.center;
@@ -434,6 +466,7 @@ async function loadScene({ scene, file }) {
     gaussians: {
       ...data,
       count: gaussianCount,
+      isEraser: new Uint8Array(gaussianCount),
     },
   });
 
@@ -542,7 +575,63 @@ function render(width, height, res) {
 }
 
 function createEraserGaussian(x, y) {
-  console.log("creating eraser gaussian at", x, y);
+  console.log("Creating eraser gaussian at", x, y);
+  const hit = cam.raycast(x, y);
+  if (!hit) {
+    console.log("No hit detected");
+    return;
+  }
+
+  console.log("Hit detected at", hit.pos);
+
+  const newIndex = globalData.gaussians.count;
+  globalData.gaussians.count++;
+
+  // Set position
+  globalData.gaussians.positions[newIndex * 3] = hit.pos[0];
+  globalData.gaussians.positions[newIndex * 3 + 1] = hit.pos[1];
+  globalData.gaussians.positions[newIndex * 3 + 2] = hit.pos[2];
+
+  // Set opacity (negative for eraser)
+  globalData.gaussians.opacities[newIndex] = -1;
+
+  // Set color (can be distinctive for visualization)
+  globalData.gaussians.colors[newIndex * 3] = 1;
+  globalData.gaussians.colors[newIndex * 3 + 1] = 0;
+  globalData.gaussians.colors[newIndex * 3 + 2] = 1;
+
+  // Set covariance (adjusted for eraser size)
+  const eraserSize = settings.eraserSize;
+  globalData.gaussians.cov3Da[newIndex * 3] = eraserSize;
+  globalData.gaussians.cov3Da[newIndex * 3 + 1] = 0;
+  globalData.gaussians.cov3Da[newIndex * 3 + 2] = 0;
+  globalData.gaussians.cov3Db[newIndex * 3] = 0;
+  globalData.gaussians.cov3Db[newIndex * 3 + 1] = eraserSize;
+  globalData.gaussians.cov3Db[newIndex * 3 + 2] = eraserSize;
+
+  // Mark as eraser
+  globalData.gaussians.isEraser[newIndex] = 1;
+
+  console.log("Created eraser gaussian at index", newIndex);
+
+  // Update buffers
+  console.log("updating center globalData buffer");
+  updateBuffer(buffers.center, globalData.gaussians.positions);
+  console.log("updating opacity globalData buffer");
+  updateBuffer(buffers.opacity, globalData.gaussians.opacities);
+  console.log("updating color globalData buffer");
+  updateBuffer(buffers.color, globalData.gaussians.colors);
+  console.log("updating covA globalData buffer");
+  updateBuffer(buffers.covA, globalData.gaussians.cov3Da);
+  console.log("updating covB globalData buffer");
+  updateBuffer(buffers.covB, globalData.gaussians.cov3Db);
+  console.log("updating isEraser globalData buffer");
+  updateBuffer(buffers.isEraser, globalData.gaussians.isEraser);
+
+  // Update worker
+  worker.postMessage(globalData);
+  cam.updateWorker();
+  requestRender();
 }
 
 // Modify updateEraserCursor function

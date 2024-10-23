@@ -19,6 +19,7 @@ onmessage = function (event) {
     data.cov3Db = new Float32Array(gaussians.count * 3);
 
     data.colors = new Float32Array(gaussians.count * 3);
+    data.isEraser = new Uint8Array(gaussians.count);
 
     // console.log("3ds are", gaussians);
     // gaussians.cov3Da = new Float32Array(gaussians.count * 3);

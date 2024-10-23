@@ -25,6 +25,7 @@ async function loadPly(content) {
   const harmonics = [];
   const colors = [];
   const cov3Ds = [];
+  const isEraser = [];
 
   // Scene bouding box
   sceneMin = new Array(3).fill(Infinity);
@@ -114,13 +115,17 @@ async function loadPly(content) {
     // scales.push(...scale)
 
     positions.push(...position);
+
+    // Initialize isEraser to 0 for all gaussians
+    isEraser.push(0);
   }
 
   console.log("opacitiy", opacities[1]);
   console.log("color", colors.slice(3, 6));
   console.log("cov3d", cov3Ds.slice(6, 12));
   console.log("position", positions.slice(3, 6));
-  console.log(opacities);
+  console.log("opacities", opacities);
+  console.log("isEraser", isEraser);
 
   console.log(
     `Loaded ${gaussianCount} gaussians in ${(
@@ -129,7 +134,7 @@ async function loadPly(content) {
     ).toFixed(3)}s`
   );
 
-  return { positions, opacities, colors, cov3Ds };
+  return { positions, opacities, colors, cov3Ds, isEraser };
 }
 
 // Converts scale and rotation properties of each

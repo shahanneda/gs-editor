@@ -33,6 +33,7 @@ async function setupWebglContext() {
         // rot: setupAttributeBuffer('a_rot', 4),
         covA: setupAttributeBuffer('a_covA', 3),
         covB: setupAttributeBuffer('a_covB', 3),
+        isEraser: setupAttributeBuffer('a_isEraser', 1),
     }
 
     // Set correct blending
