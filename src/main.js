@@ -641,7 +641,7 @@ function approximateGaussianOutsideCube(gaussian_idx, intensityThreshold, remove
     return resultEllipsoids;
 }
 
-function approximateGaussianOutsideHalfSpace(gaussian_idx, intensityThreshold, planeCenter, planeNormal) {
+function approximateGaussianOutsideHalfSpace(gaussian_idx, intensityThreshold, planeCenter, planeNormal, numSmallerBalls) {
     // read data
     const i = gaussian_idx.id;
     const gPos = Array.from(globalData.gaussians.positions.slice(i * 3, i * 3 + 3));
@@ -681,7 +681,13 @@ function approximateGaussianOutsideHalfSpace(gaussian_idx, intensityThreshold, p
         center: transformedPosition,
         radius: R
     }
-    const smallerBalls = approximateCutBall(ball, transformedPlanePoint, transformedPlaneNormal);
+    let smallerBalls = []
+    if (numSmallerBalls === 2) {
+        smallerBalls.push(...approximateCutBall2(ball, transformedPlanePoint, transformedPlaneNormal));
+    }
+    else if (numSmallerBalls === 3) {
+        smallerBalls.push(...approximateCutBall3(ball, transformedPlanePoint, transformedPlaneNormal));
+    }
 
     // Transform the smaller balls back to the original space
     const resultEllipsoids = smallerBalls.map(ball => {
@@ -701,7 +707,7 @@ function approximateGaussianOutsideHalfSpace(gaussian_idx, intensityThreshold, p
     return resultEllipsoids;
 }
 
-function approximateCutBall(originalBall, planePoint, planeNormal) {
+function approximateCutBall2(originalBall, planePoint, planeNormal) {
     // Calculate the distance h from the ball center to the plane
     const h = math.dot(math.subtract(originalBall.center, planePoint), planeNormal);
 
@@ -754,6 +760,10 @@ function approximateCutBall(originalBall, planePoint, planeNormal) {
     ];
 
     return smallerBalls;
+}
+
+function approximateCutBall3(originalBall, planePoint, planeNormal) {
+
 }
 
 // ====================================================================================================
