@@ -763,7 +763,67 @@ function approximateCutBall2(originalBall, planePoint, planeNormal) {
 }
 
 function approximateCutBall3(originalBall, planePoint, planeNormal) {
+    // Calculate the distance h from the ball center to the plane
+    const h = math.dot(math.subtract(originalBall.center, planePoint), planeNormal);
 
+    // Check if the ball intersects the plane
+    if (h >= originalBall.radius) {
+        return [originalBall]; // Ball is entirely above the plane
+    }
+
+    // To find an offset vector parallel to the plane, we can pick one vector in the plane
+    let planeTangent1 = math.cross(planeNormal, [1, 0, 0]); // First tangent vector
+    let planeTangent2 = math.cross(planeNormal, [0, 1, 0]);
+    // Ensure we have a valid tangent, recalculate if the first cross product resulted in a zero vector
+    if (math.norm(planeTangent1) === 0) {
+        planeTangent1 = math.cross(planeTangent1, [0, 0, 1]);
+    }
+    if (math.norm(planeTangent2) === 0) {
+        planeTangent2 = math.cross(planeTangent2, [0, 0, 1]);
+    }
+
+    let r, centerPoint;
+
+    if (h >= math.multiply((2 * math.sqrt(3) + 3) / 3, originalBall.radius)) {
+        r = math.multiply((2 * math.sqrt(3) + 3) / 3, originalBall.radius);
+        centerPoint = originalBall.center;
+    }
+    else {
+        // Solve for r using the quadratic equation: 4/3 * r^2 + (2R - 2h)r + (h^2 - R^2) = 0
+        const a = 4 / 3; // Coefficient of r^2
+        const b = 2 * originalBall.radius - 2 * h; // Coefficient of r
+        const c = h * h - originalBall.radius * originalBall.radius; // Constant term
+        // Use the quadratic formula: r = (-b ± sqrt(b^2 - 4ac)) / 2a
+        const discriminant = b * b - 4 * a * c;
+        const r1 = (-b + Math.sqrt(discriminant)) / (2 * a);
+        const r2 = (-b - Math.sqrt(discriminant)) / (2 * a);
+        r = Math.max(r1, r2); // Choose the positive radius
+
+        // Calculate the center point on the plane
+        centerPoint = math.add(planePoint, math.multiply(planeNormal, r));
+    }
+
+    const offset1 = math.multiply(planeTangent1, 2 / math.sqrt(3) * r); // Offset in the direction of the tangent
+    const offset2 = - math.multiply(planeTangent1, 1 / math.sqrt(3) * r) + math.multiply(planeTangent2, r);
+    const offset3 = - math.multiply(planeTangent1, 1 / math.sqrt(3) * r) - math.multiply(planeTangent2, r);
+
+    // Create two smaller balls centered symmetrically about the centerPoint
+    const smallerBalls = [
+        {
+            center: math.add(centerPoint, offset1),
+            radius: r
+        },  // First smaller ball
+        {
+            center: math.add(centerPoint, offset2),
+            radius: r
+        }, // Second smaller ball
+        {
+            center: math.add(centerPoint, offset3),
+            radius: r
+        } // Second smaller ball
+    ];
+
+    return smallerBalls;
 }
 
 // ====================================================================================================
