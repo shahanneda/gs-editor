@@ -634,7 +634,8 @@ function approximateGaussianOutsideCube(gaussian_idx, intensityThreshold, remove
 
     // Loop through each plane and call the helper function
     for (const { normal, point } of planes) {
-        const smallerEllipsoids = approximateGaussianOutsideHalfSpace(gaussian_idx, intensityThreshold, point, normal);
+        // approximate using 3 balls
+        const smallerEllipsoids = approximateGaussianOutsideHalfSpace(gaussian_idx, intensityThreshold, point, normal, 3);
         resultEllipsoids.push(...smallerEllipsoids);
     }
 
