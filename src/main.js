@@ -683,6 +683,7 @@ function approximateGaussianOutsideHalfSpace(gaussian_idx, intensityThreshold, p
         radius: R
     }
     let smallerBalls = []
+    console.log("Computing smaller balls...");
     if (numSmallerBalls === 2) {
         smallerBalls.push(...approximateCutBall2(ball, transformedPlanePoint, transformedPlaneNormal));
     }
@@ -805,8 +806,8 @@ function approximateCutBall3(originalBall, planePoint, planeNormal) {
     }
 
     const offset1 = math.multiply(planeTangent1, 2 / math.sqrt(3) * r); // Offset in the direction of the tangent
-    const offset2 = - math.multiply(planeTangent1, 1 / math.sqrt(3) * r) + math.multiply(planeTangent2, r);
-    const offset3 = - math.multiply(planeTangent1, 1 / math.sqrt(3) * r) - math.multiply(planeTangent2, r);
+    const offset2 = math.add(math.multiply(planeTangent1, -1 / math.sqrt(3) * r), math.multiply(planeTangent2, r));
+    const offset3 = math.subtract(math.multiply(planeTangent1, -1 / math.sqrt(3) * r), math.multiply(planeTangent2, r));
 
     // Create two smaller balls centered symmetrically about the centerPoint
     const smallerBalls = [
