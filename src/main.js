@@ -26,6 +26,9 @@ let eraserCursor = null;
 let eraserCursorContext = null;
 // let buffers;
 
+// Add near the top with other global variables
+let negativeGaussian = null; // Will store {position, scale, rotation, opacity}
+
 const urlParams = new URLSearchParams(window.location.search);
 let startingScene = urlParams.get("scene");
 if (!startingScene) {
@@ -58,6 +61,8 @@ const settings = {
   finishCalibration: () => {},
   showGizmo: true,
   eraserSize: 0.1,
+  eraserDepth: 0.1, // Controls how far in front/behind the clicked point to place eraser
+  eraserDepthRange: 2.0, // How far the eraser can be moved in/out
 };
 
 const defaultCameraParameters = {
@@ -542,7 +547,72 @@ function render(width, height, res) {
 }
 
 function createEraserGaussian(x, y) {
-  console.log("creating eraser gaussian at", x, y);
+  const hit = cam.raycast(x, y);
+  if (!hit) return;
+
+  // Create a negative gaussian at the hit position
+  negativeGaussian = {
+    position: vec3.clone(hit.pos),
+    originalPos: vec3.clone(hit.pos), // Store original position for depth adjustments
+    scale: [settings.eraserSize, settings.eraserSize, settings.eraserSize],
+    rotation: [1, 0, 0, 0], // Identity quaternion
+    opacity: -1
+  };
+
+  // Apply initial depth offset
+  updateNegativeGaussianPosition();
+}
+
+// Add new function to compute gaussian overlap and update opacities
+function updateOpacitiesWithNegativeGaussian() {
+  if (!negativeGaussian || !globalData) return;
+
+  const newOpacities = new Float32Array(globalData.gaussians.opacities);
+  
+  // Compute negative gaussian's covariance matrix
+  const negCov3D = computeCov3D(negativeGaussian.scale, 1, negativeGaussian.rotation);
+  
+  // For each positive gaussian
+  for (let i = 0; i < gaussianCount; i++) {
+    const pos = globalData.gaussians.positions.slice(i * 3, i * 3 + 3);
+    const originalOpacity = globalData.gaussians.opacities[i];
+    
+    // Get positive gaussian's covariance matrix
+    const posCov3D = [
+      globalData.gaussians.cov3Da[i * 3],
+      globalData.gaussians.cov3Da[i * 3 + 1],
+      globalData.gaussians.cov3Da[i * 3 + 2],
+      globalData.gaussians.cov3Db[i * 3],
+      globalData.gaussians.cov3Db[i * 3 + 1],
+      globalData.gaussians.cov3Db[i * 3 + 2]
+    ];
+    
+    // Compute 3D distance between gaussians
+    const dist = vec3.distance(pos, negativeGaussian.position);
+    
+    // Compute overlap weight using both distance and gaussian sizes
+    const posSize = Math.sqrt(posCov3D[0] + posCov3D[3] + posCov3D[5]); // Approximate gaussian size
+    const negSize = settings.eraserSize;
+    const maxDist = (posSize + negSize) * 2;
+    
+    // Gaussian falloff based on distance
+    const weight = Math.exp(-(dist * dist) / (2 * maxDist * maxDist));
+    
+    // Compute effective negative opacity
+    const alphaNegEff = -1 * weight;
+    
+    // Update opacity with clipping at 0
+    newOpacities[i] = Math.max(0, originalOpacity + alphaNegEff);
+  }
+
+  // Update the opacity buffer
+  globalData.gaussians.opacities = newOpacities;
+  updateBuffer(opacityBuffer, newOpacities);
+  
+  requestRender();
+  cam.needsWorkerUpdate = true;
+  worker.postMessage(globalData);
+  cam.updateWorker();
 }
 
 // Modify updateEraserCursor function
@@ -577,6 +647,26 @@ function updateCursor() {
   } else {
     gl.canvas.style.cursor = 'default';
   }
+}
+
+// Add new function to update negative gaussian position based on depth
+function updateNegativeGaussianPosition() {
+  if (!negativeGaussian || !cam) return;
+
+  // Get ray direction from camera to gaussian
+  const rayDir = vec3.sub(vec3.create(), negativeGaussian.originalPos, cam.pos);
+  vec3.normalize(rayDir, rayDir);
+
+  // Move gaussian along ray by depth amount
+  negativeGaussian.position = vec3.scaleAndAdd(
+    vec3.create(), 
+    negativeGaussian.originalPos, 
+    rayDir, 
+    settings.eraserDepth
+  );
+
+  // Update opacities with new position
+  updateOpacitiesWithNegativeGaussian();
 }
 
 window.onload = main;
