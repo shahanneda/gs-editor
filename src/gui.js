@@ -45,7 +45,6 @@ function initGUI() {
 
   gui.add(settings, "editingMode", EDITING_MODES).name("Editing(ALT + CLICK)").onChange(updateCursor);
   gui.add(settings, "eraserSize", 0.01, 1, 0.01).name("Eraser Size").onChange(updateEraserCursor);
-  gui.add(settings, "eraserDepth", 0.01, 2, 0.01).name("Eraser Depth").onChange(updateEraserCursor);
   // gui.add(settings, "Hello");
 
   gui.add(settings, "selectionSize", 0.01, 5, 0.01).name("Selection Size");
