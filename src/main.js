@@ -77,6 +77,7 @@ const defaultCameraParameters = {
     size: "54mb",
     url: "https://shahanneda-models.s3.us-east-2.amazonaws.com/Shahan_03_id01-30000.cply",
     localUrl: "http://127.0.0.1:5500/data/Shahan_03_id01-30000.cply",
+    speedMultiplier: 1.0,
     // localUrl: "http://127.0.0.1:5500/data/Shahan_03_id01-30000.cply",
   },
 
@@ -107,8 +108,17 @@ const defaultCameraParameters = {
     defaultCameraMode: "freefly",
     url: "https://shahanneda-models.s3.us-east-2.amazonaws.com/E7_01_id01-30000.cply",
     // localUrl: "http://127.0.0.1:5500/data/E7_01_id01-30000.ply",
-    localUrl: "http://127.0.0.1:5500/data/E7_01_id01-30000.cply",
     size: "119mb",
+    speedMultiplier: 1.0,
+  },
+  Rec: {
+    up: [0, 1.0, 0],
+    camera: [-1.0, 2.2185431569814682, 1.3665522336959839],
+    target: [0, 0.0, 0.0],
+    defaultCameraMode: "freefly",
+    url: "https://zimpmodels.s3.us-east-2.amazonaws.com/splats/rec_cleaned_2.cply",
+    size: "15mb",
+    speedMultiplier: 0.3,
   },
 };
 
@@ -338,15 +348,24 @@ async function loadScene({ scene, file }) {
   if (cam) cam.disableMovement = true;
   document.querySelector("#loading-container").style.opacity = 1;
 
+  settings.speed = 0.07 * defaultCameraParameters.Rec.speedMultiplier;
+
   let reader, contentLength;
 
   // Create a StreamableReader from a URL Response object
   if (scene != null) {
     scene = scene.split("(")[0].trim();
 
-    const url = isLocalHost
-      ? defaultCameraParameters[scene].localUrl
-      : defaultCameraParameters[scene].url;
+    // const url = isLocalHost
+    //   ? defaultCameraParameters[scene].localUrl
+    //   : defaultCameraParameters[scene].url;
+    const url = defaultCameraParameters[scene].url;
+    console.log("url is", url);
+    console.log("scene is", scene);
+    console.log("defaultCameraParameters[scene].url is", defaultCameraParameters[scene].url);
+    console.log("defaultCameraParameters[scene].localUrl is", defaultCameraParameters[scene].localUrl);
+    // const url = "http://127.0.0.1:5500/data/rec_cleaned_2.cply";
+
     // const url = `http://127.0.0.1:5500/data/Shahan_02_id02-30000.cply`;
     // const url = `http://127.0.0.1:5500/data/room.ply`;
     // const url = `https://huggingface.co/kishimisu/3d-gaussian-splatting-webgl/resolve/main/${scene}.ply`;
