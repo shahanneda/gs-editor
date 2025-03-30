@@ -120,6 +120,7 @@ const defaultCameraParameters = {
     size: "15mb",
     speedMultiplier: 0.3,
   },
+
   NeoDinner: {
     up: [0, 1.0, 0],
     camera: [-0.7, 2.0185431569814682, 1.3665522336959839],
