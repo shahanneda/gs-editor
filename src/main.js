@@ -120,6 +120,15 @@ const defaultCameraParameters = {
     size: "15mb",
     speedMultiplier: 0.3,
   },
+  NeoDinner: {
+    up: [0, 1.0, 0],
+    camera: [-0.7, 2.0185431569814682, 1.3665522336959839],
+    target: [-0.5, -1.0, -0.5],
+    defaultCameraMode: "freefly",
+    url: "https://zimpmodels.s3.us-east-2.amazonaws.com/neo_dinner.cply",
+    size: "23mb",
+    speedMultiplier: 0.3,
+  },
 };
 
 const updateBuffer = (buffer, data) => {
