@@ -471,6 +471,7 @@ function requestRender(...params) {
 
 // Render a frame on the canvas
 function render(width, height, res) {
+  console.log("rendering!")
   // Update canvas size
   const resolution = res ?? settings.renderResolution;
   const canvasWidth = width ?? Math.round(canvasSize[0] * resolution);
