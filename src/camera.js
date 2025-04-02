@@ -217,6 +217,9 @@ class Camera {
         this.target,
         vec3.scale(vec3.create(), this.up, settings.speed)
       );
+    
+    // Add log of camera target position when moving with keys
+    console.log("Camera target position updated:", this.target);
 
     requestRender();
   }
@@ -265,9 +268,11 @@ class Camera {
     invertRow(this.vm, 0);
     invertRow(this.vpm, 0);
 
-    // console.log("pos is", this.pos);
-    // console.log("target is", this.target);
-    // console.log("tphirad", this.theta, this.phi, this.radius);
+    // Log camera position and target every update
+    console.log("Camera position:", [...this.pos]);
+    console.log("Camera target:", [...this.target]);
+    console.log("Camera parameters (theta, phi, radius):", this.theta, this.phi, this.radius);
+    
     this.updateWorker();
   }
 

@@ -130,6 +130,17 @@ const defaultCameraParameters = {
     size: "23mb",
     speedMultiplier: 0.3,
   },
+  Afterparty: {
+    up: [0, 1.0, 0.0],
+    // camera.js:274 Camera parameters (theta, phi, radius): -2.0299999999999985 1.6685431569814744 15.366552233695984
+    camera: [-1.9099999999999985, 1.6685431569814744, 15.366552233695984],
+    //     Camera target: (3) [0.25943804322741926, -0.004389209221699275, -3.366572575760074]
+    target: [0.23943804322741926, -0.004389209221699275, -3.366572575760074],
+    defaultCameraMode: "freefly",
+    url: "https://zimpmodels.s3.us-east-2.amazonaws.com/splats/afterparty_cleaned.cply",
+    size: "19.7mb",
+    speedMultiplier: 0.3,
+  },
 };
 
 const updateBuffer = (buffer, data) => {
